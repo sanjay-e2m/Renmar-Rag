@@ -1,10 +1,11 @@
 import os
-
+from dotenv import load_dotenv
+load_dotenv()
 # Google Drive scopes
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
 
 # Google Drive Folder ID
-FOLDER_ID = "1XnkW5Mi0UrBM4_pbUF32N8LZPMio3jCX"
+FOLDER_ID = os.getenv("FOLDER_ID")
 
 # Path to credentials
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
