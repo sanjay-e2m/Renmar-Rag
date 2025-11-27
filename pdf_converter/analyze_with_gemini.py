@@ -154,7 +154,7 @@ def main():
     
     # Define paths
     project_root = Path(__file__).parent.parent
-    images_folder = project_root / "temp" / "pdf_images"
+    images_folder = project_root / "temp" / "pdf_images"/"Copy of Affordable_Dental_Monthly_Report_2025-08-01_2025-08-31"
     output_folder = project_root / "data" / "summaries"
     
     # Create output folder
