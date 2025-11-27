@@ -1,0 +1,14 @@
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+google-api-python-client
+pdfplumber
+python-docx
+pdf2image
+pillow
+google-generativeai
+pinecone
+transformers
+torch
+tqdm
+sentence-transformers
