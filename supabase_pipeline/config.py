@@ -26,7 +26,8 @@ class Settings:
 
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
     gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
-    gemini_embedding_model: str = os.getenv("GEMINI_EMBED_MODEL", "models/embedding-001")
+    voyage_api_key: str = os.getenv("VOYAGE_API_KEY", "")
+    voyage_embedding_model: str = os.getenv("VOYAGE_EMBED_MODEL", "voyage-large-2")
 
     retriever_top_k: int = int(os.getenv("RETRIEVER_TOP_K", "6"))
 
@@ -37,7 +38,8 @@ class Settings:
             )
         if not self.gemini_api_key:
             raise EnvironmentError("GEMINI_API_KEY must be set in the environment.")
+        if not self.voyage_api_key:
+            raise EnvironmentError("VOYAGE_API_KEY must be set in the environment.")
 
 
 settings = Settings()
-

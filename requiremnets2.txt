@@ -1,20 +1,33 @@
 python-dotenv
+
+# Google API dependencies
 google-auth
 google-auth-oauthlib
 google-auth-httplib2
 google-api-python-client
+google-generativeai
+
+# PDF and document processing
 pdfplumber
 python-docx
 pillow
 pymupdf
-google-generativeai
+
+# LangChain core packages
 langchain
 langchain-core
 langchain-community
+
+# LangChain integrations
 langchain-google-genai
 langchain-voyageai
-pinecone
+langchain-pinecone
+
+# Vector stores and databases
 supabase
+pinecone
+
+# ML/NLP dependencies
 transformers
 torch
 tqdm

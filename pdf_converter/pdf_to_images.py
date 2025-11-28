@@ -1,109 +1,188 @@
+# pdf_converter/pdf_to_images.py
 """
 PDF to Images Converter
-Converts each page of every PDF file inside data/downloaded into images.
+Converts each page of a PDF file into separate image files and returns both
+file paths and base64 data-URLs for each page image.
+
+Provides two implementations:
+1. convert_pdf_to_images - Uses pdf2image (requires poppler)
+2. convert_pdf_to_images_pymupdf - Uses PyMuPDF (no external dependencies)
 """
 
+import os
 from pathlib import Path
-from typing import List
-import fitz  # PyMuPDF
+from PIL import Image
+import base64
+import io
 
+try:
+    from pdf2image import convert_from_path
+    PDF2IMAGE_AVAILABLE = True
+except ImportError:
+    PDF2IMAGE_AVAILABLE = False
 
-def convert_pdf_to_images(
-    pdf_path: str,
-    output_folder: str,
-    dpi: int = 200,
-    image_format: str = "PNG",
-) -> List[str]:
+try:
+    import fitz  # PyMuPDF
+    PYMUPDF_AVAILABLE = True
+except ImportError:
+    PYMUPDF_AVAILABLE = False
+
+def _image_to_data_uri(pil_img, image_format="PNG"):
     """
-    Convert each page of a PDF to an image.
+    Convert a PIL Image to a data URI like: data:image/png;base64,<base64>
     """
-    pdf_path = Path(pdf_path)
+    buffer = io.BytesIO()
+    pil_img.save(buffer, format=image_format)
+    buffer.seek(0)
+    img_bytes = buffer.read()
+    b64 = base64.b64encode(img_bytes).decode('utf-8')
+    mime = "image/png" if image_format.upper() == "PNG" else f"image/{image_format.lower()}"
+    return f"data:{mime};base64,{b64}"
+
+def convert_pdf_to_images(pdf_path, output_folder, dpi=200, image_format='PNG', include_base64=True):
+    """
+    Convert each page of a PDF to an image and optionally return base64 data-URIs.
+    Uses pdf2image (requires poppler).
+    Returns: list of dicts: [{"image_path": str, "data_url": str}, ...]
+    """
+    if not PDF2IMAGE_AVAILABLE:
+        raise ImportError(
+            "pdf2image is not installed. "
+            "Install it with: pip install pdf2image, or use convert_pdf_to_images_pymupdf instead"
+        )
+    
     output_path = Path(output_folder)
-    if not pdf_path.exists():
-        raise FileNotFoundError(f"PDF file not found: {pdf_path}")
-
     output_path.mkdir(parents=True, exist_ok=True)
+
+    pdf_path = Path(pdf_path)
     pdf_name = pdf_path.stem
 
-    print(f"\nConverting PDF: {pdf_path}")
-    print(f"Output folder: {output_folder}")
+    print(f"Converting PDF: {pdf_path}")
+    print(f"Output folder: {output_path}")
     print(f"DPI: {dpi}")
 
     try:
-        zoom = dpi / 72
-        matrix = fitz.Matrix(zoom, zoom)
+        images = convert_from_path(str(pdf_path), dpi=dpi)
+        print(f"Total pages found: {len(images)}")
 
-        image_paths: List[str] = []
-        with fitz.open(str(pdf_path)) as pdf_doc:
-            print(f"Total pages found: {pdf_doc.page_count}")
+        results = []
+        for i, image in enumerate(images, start=1):
+            image_filename = f"{pdf_name}_page_{i:03d}.{image_format.lower()}"
+            image_path = output_path / image_filename
+            image.save(image_path, image_format)
+            print(f"  ✓ Saved page {i}/{len(images)}: {image_filename}")
 
-            for page_index in range(pdf_doc.page_count):
-                page = pdf_doc.load_page(page_index)
-                pix = page.get_pixmap(matrix=matrix, alpha=False)
+            data_url = None
+            if include_base64:
+                try:
+                    data_url = _image_to_data_uri(image, image_format=image_format)
+                except Exception as e:
+                    print(f"    ⚠️ Failed to convert image to base64 for page {i}: {e}")
+                    data_url = None
 
-                image_filename = f"{pdf_name}_page_{page_index + 1:03d}.{image_format.lower()}"
-                image_path = output_path / image_filename
+            results.append({
+                "page_no": i,
+                "image_path": str(image_path),
+                "data_url": data_url
+            })
 
-                pix.save(str(image_path))
-                image_paths.append(str(image_path))
-
-                print(f"  ✓ Saved page {page_index + 1}/{pdf_doc.page_count}: {image_filename}")
-
-        print(f"✅ Successfully converted {len(image_paths)} pages!")
-        return image_paths
+        print(f"\n✅ Successfully converted {len(images)} pages!")
+        return results
 
     except Exception as e:
         print(f"❌ Error converting PDF: {str(e)}")
         raise
 
 
-def convert_all_pdfs_in_folder(input_folder: str, output_base_folder: str, dpi: int = 200, image_format: str = "PNG"):
+def convert_pdf_to_images_pymupdf(pdf_path, output_folder, dpi=200, image_format='PNG', include_base64=True):
     """
-    Converts all PDFs inside a folder into images.
-    Each PDF gets its own output subfolder.
+    Convert each page of a PDF to an image using PyMuPDF (fitz).
+    This implementation doesn't require poppler installation.
+    
+    Args:
+        pdf_path: Path to the PDF file
+        output_folder: Directory to save the images
+        dpi: Resolution for the images (default: 200)
+        image_format: Image format (PNG, JPEG, etc.)
+        include_base64: Whether to include base64 data URLs in the results
+        
+    Returns: 
+        list of dicts: [{"page_no": int, "image_path": str, "data_url": str}, ...]
     """
-    input_folder = Path(input_folder)
-    output_base_folder = Path(output_base_folder)
+    if not PYMUPDF_AVAILABLE:
+        raise ImportError(
+            "PyMuPDF (fitz) is not installed. "
+            "Install it with: pip install pymupdf"
+        )
+    
+    output_path = Path(output_folder)
+    output_path.mkdir(parents=True, exist_ok=True)
 
-    if not input_folder.exists():
-        print(f"❌ Input folder does not exist: {input_folder}")
-        return
+    pdf_path = Path(pdf_path)
+    pdf_name = pdf_path.stem
 
-    pdf_files = list(input_folder.glob("*.pdf"))
-    if not pdf_files:
-        print("❌ No PDF files found in directory.")
-        return
+    print(f"Converting PDF: {pdf_path}")
+    print(f"Output folder: {output_path}")
+    print(f"DPI: {dpi}")
 
-    print(f"Found {len(pdf_files)} PDF(s) in {input_folder}")
+    try:
+        # Open the PDF
+        pdf_document = fitz.open(str(pdf_path))
+        total_pages = len(pdf_document)
+        print(f"Total pages found: {total_pages}")
 
-    for pdf_file in pdf_files:
-        output_folder = output_base_folder / pdf_file.stem
-        output_folder.mkdir(parents=True, exist_ok=True)
+        results = []
+        
+        # Calculate zoom factor from DPI (72 is the default DPI)
+        zoom = dpi / 72
+        mat = fitz.Matrix(zoom, zoom)
 
-        try:
-            convert_pdf_to_images(
-                pdf_path=str(pdf_file),
-                output_folder=str(output_folder),
-                dpi=dpi,
-                image_format=image_format
-            )
-        except Exception as e:
-            print(f"❌ Failed to convert {pdf_file.name}: {str(e)}")
+        for page_num in range(total_pages):
+            page = pdf_document[page_num]
+            
+            # Render page to an image (pixmap)
+            pix = page.get_pixmap(matrix=mat)
+            
+            # Convert pixmap to PIL Image
+            # PyMuPDF pixmaps can be in different color spaces, ensure RGB
+            if pix.n < 4:  # Gray or RGB
+                img_mode = "RGB" if pix.n == 3 else "L"
+            else:  # RGBA
+                img_mode = "RGBA"
+            
+            # Get the image data - pix.samples contains the raw pixel data
+            pil_image = Image.frombytes(img_mode, (pix.width, pix.height), pix.samples)
+            
+            # Convert to RGB if needed (for consistency)
+            if pil_image.mode != "RGB":
+                pil_image = pil_image.convert("RGB")
+            
+            # Save the image
+            image_filename = f"{pdf_name}_page_{page_num + 1:03d}.{image_format.lower()}"
+            image_path = output_path / image_filename
+            pil_image.save(image_path, image_format)
+            print(f"  ✓ Saved page {page_num + 1}/{total_pages}: {image_filename}")
 
+            # Generate base64 data URL if requested
+            data_url = None
+            if include_base64:
+                try:
+                    data_url = _image_to_data_uri(pil_image, image_format=image_format)
+                except Exception as e:
+                    print(f"    ⚠️ Failed to convert image to base64 for page {page_num + 1}: {e}")
+                    data_url = None
 
-def main():
-    """Main: converts all PDFs in data/downloaded/"""
+            results.append({
+                "page_no": page_num + 1,
+                "image_path": str(image_path),
+                "data_url": data_url
+            })
 
-    input_folder = Path("../data/downloaded")
-    output_base_folder = Path("../temp/pdf_images")
+        pdf_document.close()
+        print(f"\n✅ Successfully converted {total_pages} pages using PyMuPDF!")
+        return results
 
-    convert_all_pdfs_in_folder(
-        input_folder=input_folder,
-        output_base_folder=output_base_folder,
-        dpi=200,
-        image_format="PNG",
-    )
+    except Exception as e:
+        print(f"❌ Error converting PDF with PyMuPDF: {str(e)}")
+        raise
 
-
-if __name__ == "__main__":
-    main()

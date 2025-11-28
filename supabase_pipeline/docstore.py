@@ -7,8 +7,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Iterable, List, Optional, Tuple
-
-from langchain.storage import BaseStore
+from langchain_core.stores import BaseStore
 from langchain_core.documents import Document
 
 
@@ -54,3 +53,25 @@ class LocalJSONDocStore(BaseStore[str, Document]):
             if path.exists():
                 path.unlink()
 
+    def yield_keys(self, prefix: Optional[str] = None) -> Iterable[str]:
+        """
+        Yield keys in the store, optionally filtered by prefix.
+        
+        Args:
+            prefix: Optional prefix to filter keys
+            
+        Yields:
+            str: Keys in the store
+        """
+        if not self.store_dir.exists():
+            return
+        
+        for path in self.store_dir.glob("*.json"):
+            # Use the filename stem as the key
+            # Note: Keys with "/" are stored with "_" replacement, but we can't
+            # reliably reverse this, so we yield the stored format
+            key = path.stem
+            
+            # Filter by prefix if provided
+            if prefix is None or key.startswith(prefix):
+                yield key

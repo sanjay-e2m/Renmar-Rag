@@ -1,63 +1,56 @@
+# pdf_converter/analyze_with_gemini.py
 """
-PDF Image Analysis with Gemini Vision API
-Analyzes each PDF page image and generates detailed summaries.
+Analyze Base64 (data URI or raw base64) directly with Gemini Vision API.
+Does NOT write image to disk. Receives the data-URI or base64 string and
+passes it to the Gemini SDK as an image payload.
 """
 
 import os
-import json
-from pathlib import Path
 from datetime import datetime
 import google.generativeai as genai
-from PIL import Image
 
+# Load environment variables and configure Gemini
+try:
+    from config.settings import Config
+    GEMINI_API_KEY = Config.GEMINI_API_KEY
+except ImportError:
+    # Fallback to environment variable if config not available
+    GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
-from dotenv import load_dotenv
-load_dotenv()
+# Configure Gemini API key
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-# Configure Gemini API
+# Helper to sanitize/strip data URI prefix if present
+def _strip_data_uri(data_uri_or_b64):
+    if data_uri_or_b64 is None:
+        return None
+    if data_uri_or_b64.startswith("data:"):
+        # data:<mime>;base64,<data>
+        try:
+            return data_uri_or_b64.split(",", 1)[1]
+        except Exception:
+            return data_uri_or_b64
+    return data_uri_or_b64
 
-genai.configure(api_key=GEMINI_API_KEY)
-
-
-def analyze_image_with_gemini(image_path, page_number, total_pages):
-    """
-    Analyze a PDF page image using Gemini Vision API.
-    
-    Args:
-        image_path (str): Path to the image file
-        page_number (int): Current page number
-        total_pages (int): Total number of pages in the PDF
-        
-    Returns:
-        str: Generated summary for the page
-    """
-    # Load the image
-    img = Image.open(image_path)
-    
-    # Initialize Gemini model with vision capabilities
-    model = genai.GenerativeModel('gemini-2.0-flash')
-    
-    # Create a prompt based on page position
+def _build_prompt(page_number: int, total_pages: int) -> str:
     if page_number == 1:
-        # First page is likely an introduction/cover page
-        prompt = """
+        return """
         Analyze this page from a business report. This appears to be page 1.
-        
+
         If this is an introduction, cover, or title page:
         - Provide a BRIEF summary (2-3 sentences maximum) stating the document type, company/client name, and reporting period.
-        
+
         If this page contains actual data or detailed content:
         - Provide a DETAILED summary including all key metrics, data points, charts, and insights.
         - Extract specific numbers, percentages, trends, and notable findings.
-        
+
         Focus on accuracy and completeness of information.
         """
     else:
-        # Other pages likely contain data
-        prompt = f"""
+        return f"""
         Analyze this page {page_number} of {total_pages} from a business report.
-        
+
         Provide a DETAILED summary that includes:
         - Section title or heading
         - All key metrics, KPIs, and data points with specific values
@@ -65,131 +58,45 @@ def analyze_image_with_gemini(image_path, page_number, total_pages):
         - Trends, insights, and notable patterns
         - Comparisons (month-over-month, year-over-year, etc.)
         - Any recommendations or action items
-        
+
         Be thorough and extract ALL important information. Include actual numbers and percentages.
         """
-    
-    # Generate content
-    response = model.generate_content([prompt, img])
-    
-    return response.text
 
+def analyze_image_base64(base64_or_data_uri: str, page_number: int, total_pages: int, mime_type_hint="image/png"):
+    """
+    Analyze a base64 string or data URI directly with Gemini.
+    - base64_or_data_uri: either "data:image/png;base64,..." or raw base64 (no prefix)
+    - returns: {"summary": str, "used_payload": dict}
+    """
 
-def analyze_all_images(images_folder, pdf_name):
-    """
-    Analyze all images from a PDF and create page-wise summaries.
-    
-    Args:
-        images_folder (str): Folder containing the images
-        pdf_name (str): Name of the PDF (for filtering images)
-        
-    Returns:
-        dict: Analysis result with page-wise entries
-    """
-    images_path = Path(images_folder)
-    
-    # Get all images for this PDF, sorted by page number
-    image_files = sorted([
-        f for f in images_path.iterdir()
-        if f.name.startswith(pdf_name) and f.suffix.lower() in ['.png', '.jpg', '.jpeg']
-    ])
-    
-    if not image_files:
-        print(f"❌ No images found for PDF: {pdf_name}")
-        return None
-    
-    print(f"📄 Analyzing {len(image_files)} pages from: {pdf_name}")
-    print("=" * 80)
-    
-    pages = []
-    
-    # Analyze each image
-    for idx, image_file in enumerate(image_files, start=1):
-        print(f"\n🔍 Analyzing page {idx}/{len(image_files)}: {image_file.name}")
-        
-        try:
-            summary = analyze_image_with_gemini(
-                str(image_file),
-                page_number=idx,
-                total_pages=len(image_files)
-            )
-            
-            # Create page entry with required format
-            page_entry = {
-                "pdf_id": pdf_name,
-                "page_no": idx,
-                "image_path": str(image_file),
-                "summary": summary.strip(),
-                "created_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S%z")
-            }
-            
-            pages.append(page_entry)
-            
-            print(f"✅ Page {idx} analyzed successfully")
-            print(f"Summary preview: {summary[:100]}...")
-            
-        except Exception as e:
-            print(f"❌ Error analyzing page {idx}: {str(e)}")
-            page_entry = {
-                "pdf_id": pdf_name,
-                "page_no": idx,
-                "image_path": str(image_file),
-                "summary": f"Error analyzing page: {str(e)}",
-                "created_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S%z")
-            }
-            pages.append(page_entry)
-    
-    # Create final result with page-wise structure
-    result = {
-        "pdf_id": pdf_name,
-        "total_pages": len(pages),
-        "pages": pages
+    if not base64_or_data_uri:
+        return {"summary": "No base64 image provided", "used_payload": None}
+
+    # Check if Gemini is properly configured
+    if not GEMINI_API_KEY:
+        return {"summary": "Error: GEMINI_API_KEY not configured. Please set the API key in your environment or config.", "used_payload": None}
+
+    try:
+        model = genai.GenerativeModel('gemini-2.0-flash')
+    except Exception as e:
+        return {"summary": f"Error initializing Gemini model: {e}", "used_payload": None}
+
+    # If it's a data URI, strip the prefix to get raw base64
+    raw_b64 = _strip_data_uri(base64_or_data_uri)
+
+    # Prepare the prompt and image payload.
+    prompt = _build_prompt(page_number, total_pages)
+
+    # Some genai SDKs accept a dict for image part; keep the same shape your earlier code used:
+    image_part = {
+        "mime_type": mime_type_hint,
+        "data": raw_b64
     }
-    
-    return result
 
-
-def main():
-    """Main function to run the analysis."""
-    
-    # Define paths
-    project_root = Path(__file__).parent.parent
-    images_folder = project_root / "temp" / "pdf_images"/"Copy of Affordable_Dental_Monthly_Report_2025-08-01_2025-08-31"
-    output_folder = project_root / "data" / "summaries"
-    
-    # Create output folder
-    output_folder.mkdir(parents=True, exist_ok=True)
-    
-    # PDF name to analyze
-    pdf_name = "Copy of Affordable_Dental_Monthly_Report_2025-08-01_2025-08-31"
-    
-    # Analyze all images
-    result = analyze_all_images(str(images_folder), pdf_name)
-    
-    if result:
-        # Save to JSON file
-        output_file = output_folder / f"{pdf_name}_summary.json"
-        
-        with open(output_file, 'w', encoding='utf-8') as f:
-            json.dump(result, f, indent=2, ensure_ascii=False)
-        
-        print("\n" + "=" * 80)
-        print(f"✅ Analysis complete!")
-        print(f"📁 Summary saved to: {output_file}")
-        print(f"📊 Total pages analyzed: {result['total_pages']}")
-        print(f"📄 Pages stored individually with separate summaries")
-        print("\n" + "=" * 80)
-        
-        # Print a preview of the first page summary
-        if result['pages']:
-            print("\n📝 First Page Summary Preview:")
-            print("-" * 80)
-            first_page = result['pages'][0]
-            print(f"Page {first_page['page_no']}: {first_page['summary'][:300]}...")
-            print("-" * 80)
-    else:
-        print("❌ Analysis failed!")
-
-
-if __name__ == "__main__":
-    main()
+    try:
+        # Call Gemini: pass the prompt and the image part. This avoids writing to disk.
+        response = model.generate_content([prompt, image_part])
+        summary_text = response.text if hasattr(response, "text") else str(response)
+        return {"summary": summary_text.strip(), "used_payload": {"mime_type": mime_type_hint, "data_length": len(raw_b64)}}
+    except Exception as e:
+        return {"summary": f"Error calling Gemini: {e}", "used_payload": {"mime_type": mime_type_hint, "data_length": len(raw_b64)}}
