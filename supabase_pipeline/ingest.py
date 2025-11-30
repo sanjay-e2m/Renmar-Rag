@@ -6,23 +6,28 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Iterable, List, Sequence, Tuple
-from langchain_core.stores import BaseStore
+from typing import List, Sequence, Tuple
+
 from langchain_core.documents import Document
-from langchain_voyageai import VoyageAIEmbeddings
 from langchain_community.vectorstores import SupabaseVectorStore
 from supabase import Client, create_client
 
-try:
-    from .config import settings
-    from .docstore import LocalJSONDocStore
-except ImportError:
-    # Allow running as a script directly
+from huggingface_hub import login as hf_login
+
+# NOTE: When the file is executed via `python ingest.py`, Python does not
+# treat `supabase_pipeline` as a package, so we manually add the project root
+# to `sys.path` before importing package modules.
+if __package__ in {None, ""}:
     import sys
-    from pathlib import Path
-    sys.path.insert(0, str(Path(__file__).parent.parent))
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from supabase_pipeline.config import settings
     from supabase_pipeline.docstore import LocalJSONDocStore
+    from supabase_pipeline.langchain_gemma_embeddings import LangChainGemmaEmbeddings
+else:
+    from .config import settings
+    from .docstore import LocalJSONDocStore
+    from .langchain_gemma_embeddings import LangChainGemmaEmbeddings
 
 
 def _load_summary_files() -> Sequence[Path]:
@@ -81,11 +86,9 @@ def _build_documents() -> Tuple[List[Document], List[Tuple[str, Document]]]:
     return vector_docs, docstore_entries
 
 
-def _create_vector_store(client: Client) -> SupabaseVectorStore:
-    embeddings = VoyageAIEmbeddings(
-        model=settings.voyage_embedding_model,
-        voyage_api_key=settings.voyage_api_key,
-    )
+def _create_vector_store(
+    client: Client, embeddings: LangChainGemmaEmbeddings
+) -> SupabaseVectorStore:
     return SupabaseVectorStore(
         client=client,
         table_name=settings.supabase_table,
@@ -96,6 +99,14 @@ def _create_vector_store(client: Client) -> SupabaseVectorStore:
 
 def ingest() -> None:
     settings.validate_vector_store()
+
+    if settings.huggingface_token:
+        try:
+            hf_login(token=settings.huggingface_token)
+        except Exception as exc:
+            raise RuntimeError(
+                "Failed to authenticate with Hugging Face using HUGGINGFACE_HUB_TOKEN."
+            ) from exc
 
     vector_docs, docstore_entries = _build_documents()
     doc_ids = [doc.metadata["doc_id"] for doc in vector_docs]
@@ -108,7 +119,10 @@ def ingest() -> None:
     
     try:
         client = create_client(settings.supabase_url, settings.supabase_key)
-        vector_store = _create_vector_store(client)
+        embeddings_model = LangChainGemmaEmbeddings(
+            model_name=settings.embedding_model
+        )
+        vector_store = _create_vector_store(client, embeddings_model)
         
         # Test connection by trying to query the table
         print("✅ Connected to Supabase successfully.")
@@ -129,10 +143,6 @@ def ingest() -> None:
 
         print(f"📤 Adding {len(vector_docs)} documents to vector store...")
         # Generate embeddings and insert directly to avoid UUID ID conflicts
-        embeddings_model = VoyageAIEmbeddings(
-            model=settings.voyage_embedding_model,
-            voyage_api_key=settings.voyage_api_key,
-        )
         
         # Generate embeddings for all documents
         texts = [doc.page_content for doc in vector_docs]

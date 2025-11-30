@@ -51,7 +51,7 @@ except Exception:
         GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 # Set your folder path here (containing PDF files)
-folder_path = "/Users/dhyeybhimani/Desktop/RAG_v01/data/downloaded"
+folder_path = "C:\\Users\\mehul\\OneDrive\\Desktop\\Renmar\\Renmar-Rag\\data\\downloaded"
 
 def process_pdf_pipeline(pdf_path, output_dir=None):
     """Process a single PDF file through the pipeline"""
