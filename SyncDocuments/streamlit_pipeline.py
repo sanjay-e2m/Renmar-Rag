@@ -150,7 +150,7 @@ def sync_documents_streamlit(
                 
                 # Process PDF (convert to images, create summaries)
                 log("  🔄 Processing PDF...")
-                summary_data = process_pdf(pdf_path)
+                summary_data = process_pdf(pdf_path, check_cancel=should_cancel)
                 
                 if not summary_data:
                     log(f"  ❌ Failed to process {pdf_file['name']}")
@@ -164,7 +164,7 @@ def sync_documents_streamlit(
                 
                 # Store in Supabase
                 log("  💾 Storing in vector database...")
-                store_in_supabase(summary_data)
+                store_in_supabase(summary_data, check_cancel=should_cancel)
                 log(f"  ✅ Successfully synced {pdf_file['name']}")
                 
                 results["processed"] += 1

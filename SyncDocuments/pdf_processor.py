@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Callable
 
 import google.generativeai as genai
 
@@ -30,12 +30,16 @@ except ImportError:
     from pdf_converter.analyze_with_gemini import analyze_image_base64
 
 
-def process_pdf(pdf_path: Path) -> Optional[Dict]:
+def process_pdf(
+    pdf_path: Path, 
+    check_cancel: Optional[Callable[[], bool]] = None
+) -> Optional[Dict]:
     """
     Process a PDF file: convert to images and create summaries.
     
     Args:
         pdf_path: Path to the PDF file
+        check_cancel: Optional callback to check if processing should be cancelled
         
     Returns:
         Dictionary with pdf_id, total_pages, and pages data, or None if error
@@ -77,6 +81,11 @@ def process_pdf(pdf_path: Path) -> Optional[Dict]:
         print("\n📝 Generating summaries with Gemini...")
         
         for idx, item in enumerate(image_results, 1):
+            # Check for cancellation
+            if check_cancel and check_cancel():
+                print("\n⚠️  Processing cancelled by user")
+                return None
+                
             page_no = item["page_no"]
             original_image_path = item["image_path"]
             data_url = item.get("data_url")

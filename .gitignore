@@ -23,8 +23,7 @@ credentials/
 !requirements.txt
 
 # Data Files
-data/downloaded/
-data/summaries/
+data/
 *.pdf
 *.png
 *.jpg

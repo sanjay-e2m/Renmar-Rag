@@ -4,7 +4,7 @@ Vector store utilities for storing embeddings in Supabase.
 
 from __future__ import annotations
 
-from typing import List, Tuple
+from typing import List, Tuple, Optional, Callable
 from pathlib import Path
 
 from langchain_core.documents import Document
@@ -83,12 +83,16 @@ def build_documents_from_summary(summary_data: dict) -> Tuple[List[Document], Li
     return vector_docs, docstore_entries
 
 
-def store_in_supabase(summary_data: dict) -> None:
+def store_in_supabase(
+    summary_data: dict,
+    check_cancel: Optional[Callable[[], bool]] = None
+) -> None:
     """
     Store document embeddings in Supabase vector store.
     
     Args:
         summary_data: Dictionary with pdf_id, total_pages, and pages
+        check_cancel: Optional callback to check if processing should be cancelled
     """
     settings.validate()
     _maybe_login_huggingface()
@@ -112,6 +116,10 @@ def store_in_supabase(summary_data: dict) -> None:
     # Remove existing documents with same doc_ids
     print("🗑️  Removing existing documents with matching doc_ids...")
     for doc_id in doc_ids:
+        if check_cancel and check_cancel():
+            print("⚠️  Storage cancelled by user")
+            return
+            
         try:
             client.table(settings.supabase_table).delete().eq(
                 "metadata->>doc_id", doc_id
@@ -137,6 +145,10 @@ def store_in_supabase(summary_data: dict) -> None:
     print(f"📤 Inserting {len(records)} documents into Supabase...")
     batch_size = 100
     for i in range(0, len(records), batch_size):
+        if check_cancel and check_cancel():
+            print("⚠️  Storage cancelled by user")
+            return
+            
         batch = records[i:i + batch_size]
         client.table(settings.supabase_table).insert(batch).execute()
         print(f"  ✅ Inserted batch {i//batch_size + 1}/{(len(records)-1)//batch_size + 1}")

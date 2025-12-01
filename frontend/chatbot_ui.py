@@ -381,21 +381,20 @@ with tab1:
     if not st.session_state.initialized:
         initialize_chatbot(top_k=top_k)
 
-    # Create scrollable messages container with auto-scroll
-    messages_container = st.container(height=600)
+    # Display chat history in a scrollable container
+    # Calculate dynamic height based on message count
+    num_messages = len(st.session_state.messages)
+    # Use a smaller container when there are fewer messages
+    if num_messages == 0:
+        container_height = 400
+    elif num_messages <= 3:
+        container_height = 450
+    elif num_messages <= 6:
+        container_height = 500
+    else:
+        container_height = 550
     
-    # Auto-scroll script to bottom when new messages arrive
-    if st.session_state.messages or st.session_state.processing:
-        st.markdown("""
-        <script>
-        setTimeout(function() {
-            var container = window.parent.document.querySelector('[data-testid="stVerticalBlock"]');
-            if (container) {
-                container.scrollTop = container.scrollHeight;
-            }
-        }, 100);
-        </script>
-        """, unsafe_allow_html=True)
+    messages_container = st.container(height=container_height)
     
     with messages_container:
         # Display chat history
@@ -424,23 +423,9 @@ with tab1:
                                     st.json(info)
                                     if idx < len(message["context_info"]):
                                         st.divider()
-        
-        # Show thinking indicator if processing
-        if st.session_state.processing:
-            with st.chat_message("assistant"):
-                st.markdown("""
-                <div class="thinking-indicator">
-                    <span>🤔 Thinking</span>
-                    <span class="thinking-dots">
-                        <span class="thinking-dot"></span>
-                        <span class="thinking-dot"></span>
-                        <span class="thinking-dot"></span>
-                    </span>
-                </div>
-                """, unsafe_allow_html=True)
     
-    # Chat input - always at bottom (rendered after messages)
-    if prompt := st.chat_input("Ask a question about your business documents...", disabled=st.session_state.processing):
+    # Chat input - always visible below messages container
+    if prompt := st.chat_input("Ask a question about your business documents..."):
         # Ensure chatbot is initialized
         if not st.session_state.initialized or st.session_state.chatbot is None:
             if not initialize_chatbot(top_k=top_k):
@@ -448,48 +433,51 @@ with tab1:
         
         # Add user message to chat immediately
         st.session_state.messages.append({"role": "user", "content": prompt})
-        st.session_state.processing = True
-        st.rerun()
-    
-    # Process the message if we're in processing state
-    if st.session_state.processing and st.session_state.messages:
-        # Get the last user message
-        last_message = st.session_state.messages[-1]
-        if last_message["role"] == "user":
-            # Get bot response
-            try:
-                result = st.session_state.chatbot.chat(last_message["content"])
-                answer = result["answer"]
-                context_docs = result.get("context_docs", [])
-                
-                # Prepare context info
-                context_info = []
-                for doc in context_docs:
-                    context_info.append({
-                        "doc_id": doc.metadata.get("doc_id", "N/A"),
-                        "pdf_id": doc.metadata.get("pdf_id", "N/A"),
-                        "page_no": doc.metadata.get("page_no", "N/A"),
-                        "similarity": round(doc.metadata.get("similarity", 0), 4) if doc.metadata.get("similarity") else "N/A",
-                        "content_preview": doc.page_content[:200] + "..." if len(doc.page_content) > 200 else doc.page_content
-                    })
-                
-                # Add bot message to chat history
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": answer,
-                    "context_info": context_info
-                })
-                
-            except Exception as e:
-                error_msg = f"Error: {str(e)}"
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": error_msg
-                })
+        
+        # Show the user message immediately in the container
+        with messages_container:
+            with st.chat_message("user"):
+                st.markdown(f'<div class="chat-message user-message">{prompt}</div>', unsafe_allow_html=True)
             
-            # Reset processing state
-            st.session_state.processing = False
-            st.rerun()
+            # Show thinking indicator immediately
+            with st.chat_message("assistant"):
+                with st.spinner("🤔 Thinking..."):
+                    # Process the message
+                    try:
+                        # Get bot response
+                        result = st.session_state.chatbot.chat(prompt)
+                        answer = result["answer"]
+                        context_docs = result.get("context_docs", [])
+                        
+                        # Prepare context info
+                        context_info = []
+                        for doc in context_docs:
+                            context_info.append({
+                                "doc_id": doc.metadata.get("doc_id", "N/A"),
+                                "pdf_id": doc.metadata.get("pdf_id", "N/A"),
+                                "page_no": doc.metadata.get("page_no", "N/A"),
+                                "similarity": round(doc.metadata.get("similarity", 0), 4) if doc.metadata.get("similarity") else "N/A",
+                                "content_preview": doc.page_content[:200] + "..." if len(doc.page_content) > 200 else doc.page_content
+                            })
+                        
+                        # Add bot message to chat history
+                        st.session_state.messages.append({
+                            "role": "assistant",
+                            "content": answer,
+                            "context_info": context_info
+                        })
+                        
+                    except Exception as e:
+                        error_msg = f"Error: {str(e)}"
+                        st.session_state.messages.append({
+                            "role": "assistant",
+                            "content": error_msg
+                        })
+        
+        # Rerun to display the new messages properly
+        st.rerun()
+
+
 
 # ==================== DOCUMENT SYNC TAB ====================
 with tab2:
