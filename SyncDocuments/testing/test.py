@@ -5,8 +5,8 @@ Console-based test script for the document sync pipeline.
 import sys
 from pathlib import Path
 
-# Add parent directory to path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+# Add project root to path (go up two levels from testing/ to project root)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from SyncDocuments.pipeline import sync_documents
 from SyncDocuments.config import settings

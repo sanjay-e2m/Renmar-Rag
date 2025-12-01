@@ -5,7 +5,7 @@ Main pipeline for syncing documents from Google Drive to Supabase.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Dict
+from typing import Dict, Iterable
 
 from supabase import create_client
 
@@ -23,6 +23,36 @@ from SyncDocuments.drive_sync import (
 )
 from SyncDocuments.pdf_processor import process_pdf
 from SyncDocuments.vector_store import store_in_supabase
+
+
+def _cleanup_document_assets(pdf_path: Path, pages_data: Iterable[Dict]) -> None:
+    """
+    Remove downloaded PDF, generated summary JSON, and temp images.
+
+    Args:
+        pdf_path: Path to the downloaded PDF.
+        pages_data: Iterable of page metadata with image paths.
+    """
+    try:
+        # Delete the downloaded PDF
+        if pdf_path.exists():
+            pdf_path.unlink()
+
+        # Delete the summary JSON created for this PDF
+        summary_file = settings.summaries_dir / f"{pdf_path.stem}_summary.json"
+        if summary_file.exists():
+            summary_file.unlink()
+
+        # Delete any generated page images
+        for page in pages_data:
+            image_path = page.get("image_path")
+            if not image_path:
+                continue
+            img = Path(image_path)
+            if img.exists():
+                img.unlink()
+    except Exception as cleanup_error:
+        print(f"  ⚠️  Cleanup issue for {pdf_path.name}: {cleanup_error}")
 
 
 def sync_documents(folder_id: str) -> Dict:
@@ -120,6 +150,9 @@ def sync_documents(folder_id: str) -> Dict:
                 store_in_supabase(summary_data)
                 print(f"  ✅ Successfully synced {pdf_file['name']}")
                 
+                # Remove local artifacts for this PDF
+                _cleanup_document_assets(pdf_path, summary_data.get("pages", []))
+
                 results["processed"] += 1
                 
             except Exception as e:

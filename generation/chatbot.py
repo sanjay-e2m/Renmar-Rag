@@ -90,23 +90,24 @@ class ChatBot:
         # Build the full prompt
         instruction = dedent("""
             You are a helpful business analytics assistant. You must answer questions
-            using ONLY the information contained in the provided documents. 
+            using ONLY the information contained in the provided documents.
             
-            If the answer is not explicitly stated in the documents, respond with:
+            If the answer is not explicitly stated in the documents, check the provided
+            conversation history for a prior answer. If neither the documents nor the
+            history contain the needed information, respond with:
             "I don't have enough information in the provided documents to answer that."
             
             Never use outside knowledge, assumptions, or prior training data beyond
-            what is provided in the context documents.
+            what is provided in the context documents or conversation history.
             
             When answering, be concise and evidence-based, citing the relevant document/page
-            when possible. You can reference previous conversation context to provide
-            more natural follow-up answers.
+            or referencing prior conversation when possible.
         """).strip()
 
         prompt = (
             f"{instruction}\n\n"
             f"## Context Documents:\n{context}\n\n"
-            f"{history_text}"
+            f"## Conversation History:\n{history_text}\n\n"
             f"## User Question:\n{question}\n\n"
             "Provide a concise, evidence-based answer based on the documents above.\n"
         )

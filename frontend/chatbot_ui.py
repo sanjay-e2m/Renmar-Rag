@@ -194,6 +194,95 @@ st.markdown("""
     .cancel-button:hover {
         background-color: #d32f2f !important;
     }
+    
+    /* Ensure chat input stays at bottom */
+    .stChatInput {
+        position: sticky;
+        bottom: 0;
+        background-color: #1e1e1e;
+        padding: 1rem 0;
+        margin-top: 1rem;
+        z-index: 100;
+        border-top: 1px solid #444444;
+    }
+    
+    /* Custom scrollbar for chat messages container */
+    [data-testid="stVerticalBlock"] [data-testid="element-container"]:has([data-testid="stChatMessage"]) {
+        scrollbar-width: thin;
+        scrollbar-color: #64b5f6 #2d2d2d;
+    }
+    
+    /* Ensure messages don't overflow */
+    [data-testid="stChatMessage"] {
+        margin-bottom: 1rem;
+    }
+    
+    /* Smooth scrolling for chat container */
+    [data-testid="stVerticalBlock"] {
+        scroll-behavior: smooth;
+    }
+    
+    /* Thinking/loading indicator styling */
+    .thinking-indicator {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.75rem 1rem;
+        color: #64b5f6;
+        font-style: italic;
+    }
+    
+    .thinking-dots {
+        display: inline-flex;
+        gap: 0.25rem;
+    }
+    
+    .thinking-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background-color: #64b5f6;
+        animation: thinking-pulse 1.4s ease-in-out infinite;
+    }
+    
+    .thinking-dot:nth-child(2) {
+        animation-delay: 0.2s;
+    }
+    
+    .thinking-dot:nth-child(3) {
+        animation-delay: 0.4s;
+    }
+    
+    @keyframes thinking-pulse {
+        0%, 60%, 100% {
+            opacity: 0.3;
+            transform: scale(0.8);
+        }
+        30% {
+            opacity: 1;
+            transform: scale(1);
+        }
+    }
+    
+    /* Prevent layout shift */
+    .chat-message-container {
+        min-height: 50px;
+    }
+    
+    /* Auto-scroll to bottom */
+    .chat-messages-container {
+        scroll-behavior: smooth;
+    }
+    
+    /* Ensure spinner is visible */
+    .stSpinner > div {
+        border-top-color: #64b5f6 !important;
+    }
+    
+    /* Better spacing for messages */
+    [data-testid="stChatMessage"] {
+        padding: 0.5rem 0;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -216,6 +305,8 @@ if "existing_pdfs" not in st.session_state:
     st.session_state.existing_pdfs = []
 if "checked_existing" not in st.session_state:
     st.session_state.checked_existing = False
+if "processing" not in st.session_state:
+    st.session_state.processing = False
 
 
 def initialize_chatbot(top_k: int = 2):
@@ -290,79 +381,115 @@ with tab1:
     if not st.session_state.initialized:
         initialize_chatbot(top_k=top_k)
 
-    # Display chat history
-    chat_container = st.container()
-    with chat_container:
-        for message in st.session_state.messages:
-            if message["role"] == "user":
-                with st.chat_message("user"):
-                    st.markdown(f'<div class="chat-message user-message">{message["content"]}</div>', unsafe_allow_html=True)
-            else:
-                with st.chat_message("assistant"):
-                    st.markdown(f'<div class="chat-message bot-message">{message["content"]}</div>', unsafe_allow_html=True)
-                    # Show context info if available
-                    if "context_info" in message:
-                        with st.expander("📄 View Retrieved Documents"):
-                            st.json(message["context_info"])
-
-    # Chat input
-    if prompt := st.chat_input("Ask a question about your business documents..."):
+    # Create scrollable messages container with auto-scroll
+    messages_container = st.container(height=600)
+    
+    # Auto-scroll script to bottom when new messages arrive
+    if st.session_state.messages or st.session_state.processing:
+        st.markdown("""
+        <script>
+        setTimeout(function() {
+            var container = window.parent.document.querySelector('[data-testid="stVerticalBlock"]');
+            if (container) {
+                container.scrollTop = container.scrollHeight;
+            }
+        }, 100);
+        </script>
+        """, unsafe_allow_html=True)
+    
+    with messages_container:
+        # Display chat history
+        if not st.session_state.messages:
+            # Show welcome message if no messages
+            with st.chat_message("assistant"):
+                st.markdown("""
+                <div class="chat-message bot-message">
+                    👋 Welcome! I'm your Business Analytics Chatbot. 
+                    Ask me questions about your business documents, and I'll help you find the information you need.
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            for message in st.session_state.messages:
+                if message["role"] == "user":
+                    with st.chat_message("user"):
+                        st.markdown(f'<div class="chat-message user-message">{message["content"]}</div>', unsafe_allow_html=True)
+                else:
+                    with st.chat_message("assistant"):
+                        st.markdown(f'<div class="chat-message bot-message">{message["content"]}</div>', unsafe_allow_html=True)
+                        # Show context info if available
+                        if "context_info" in message and message["context_info"]:
+                            with st.expander("📄 View Retrieved Documents"):
+                                for idx, info in enumerate(message["context_info"], 1):
+                                    st.markdown(f"**Document {idx}**")
+                                    st.json(info)
+                                    if idx < len(message["context_info"]):
+                                        st.divider()
+        
+        # Show thinking indicator if processing
+        if st.session_state.processing:
+            with st.chat_message("assistant"):
+                st.markdown("""
+                <div class="thinking-indicator">
+                    <span>🤔 Thinking</span>
+                    <span class="thinking-dots">
+                        <span class="thinking-dot"></span>
+                        <span class="thinking-dot"></span>
+                        <span class="thinking-dot"></span>
+                    </span>
+                </div>
+                """, unsafe_allow_html=True)
+    
+    # Chat input - always at bottom (rendered after messages)
+    if prompt := st.chat_input("Ask a question about your business documents...", disabled=st.session_state.processing):
         # Ensure chatbot is initialized
         if not st.session_state.initialized or st.session_state.chatbot is None:
             if not initialize_chatbot(top_k=top_k):
                 st.stop()
         
-        # Add user message to chat
+        # Add user message to chat immediately
         st.session_state.messages.append({"role": "user", "content": prompt})
-        
-        # Display user message
-        with st.chat_message("user"):
-            st.markdown(f'<div class="chat-message user-message">{prompt}</div>', unsafe_allow_html=True)
-        
-        # Get bot response
-        with st.chat_message("assistant"):
-            with st.spinner("Thinking..."):
-                try:
-                    result = st.session_state.chatbot.chat(prompt)
-                    answer = result["answer"]
-                    context_docs = result.get("context_docs", [])
-                    
-                    # Display answer
-                    st.markdown(f'<div class="chat-message bot-message">{answer}</div>', unsafe_allow_html=True)
-                    
-                    # Prepare context info
-                    context_info = []
-                    for doc in context_docs:
-                        context_info.append({
-                            "doc_id": doc.metadata.get("doc_id", "N/A"),
-                            "pdf_id": doc.metadata.get("pdf_id", "N/A"),
-                            "page_no": doc.metadata.get("page_no", "N/A"),
-                            "similarity": round(doc.metadata.get("similarity", 0), 4) if doc.metadata.get("similarity") else "N/A",
-                            "content_preview": doc.page_content[:200] + "..." if len(doc.page_content) > 200 else doc.page_content
-                        })
-                    
-                    # Show context info
-                    if context_info:
-                        with st.expander(f"📄 View {len(context_info)} Retrieved Document(s)"):
-                            for idx, info in enumerate(context_info, 1):
-                                st.markdown(f"**Document {idx}**")
-                                st.json(info)
-                                st.divider()
-                    
-                    # Add bot message to chat history
-                    st.session_state.messages.append({
-                        "role": "assistant",
-                        "content": answer,
-                        "context_info": context_info
+        st.session_state.processing = True
+        st.rerun()
+    
+    # Process the message if we're in processing state
+    if st.session_state.processing and st.session_state.messages:
+        # Get the last user message
+        last_message = st.session_state.messages[-1]
+        if last_message["role"] == "user":
+            # Get bot response
+            try:
+                result = st.session_state.chatbot.chat(last_message["content"])
+                answer = result["answer"]
+                context_docs = result.get("context_docs", [])
+                
+                # Prepare context info
+                context_info = []
+                for doc in context_docs:
+                    context_info.append({
+                        "doc_id": doc.metadata.get("doc_id", "N/A"),
+                        "pdf_id": doc.metadata.get("pdf_id", "N/A"),
+                        "page_no": doc.metadata.get("page_no", "N/A"),
+                        "similarity": round(doc.metadata.get("similarity", 0), 4) if doc.metadata.get("similarity") else "N/A",
+                        "content_preview": doc.page_content[:200] + "..." if len(doc.page_content) > 200 else doc.page_content
                     })
-                    
-                except Exception as e:
-                    error_msg = f"Error: {str(e)}"
-                    st.error(error_msg)
-                    st.session_state.messages.append({
-                        "role": "assistant",
-                        "content": error_msg
-                    })
+                
+                # Add bot message to chat history
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": answer,
+                    "context_info": context_info
+                })
+                
+            except Exception as e:
+                error_msg = f"Error: {str(e)}"
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": error_msg
+                })
+            
+            # Reset processing state
+            st.session_state.processing = False
+            st.rerun()
 
 # ==================== DOCUMENT SYNC TAB ====================
 with tab2:
