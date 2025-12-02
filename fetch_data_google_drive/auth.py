@@ -9,11 +9,10 @@ from config.settings import SCOPES, CREDENTIALS_PATH, TOKEN_PATH
 def connect_drive():
     creds = None
 
-    # If token exists, load it
     if os.path.exists(TOKEN_PATH):
         creds = Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
 
-    # If no valid token → authenticate
+
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
@@ -23,10 +22,9 @@ def connect_drive():
             )
             creds = flow.run_local_server(port=0)
 
-        # Save token
+
         with open(TOKEN_PATH, "w") as token:
             token.write(creds.to_json())
 
-    # Connect to Google Drive
     service = build("drive", "v3", credentials=creds)
     return service

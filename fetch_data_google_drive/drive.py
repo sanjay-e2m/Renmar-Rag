@@ -19,7 +19,7 @@ def list_files_in_folder(service, folder_id):
 def download_file(service, file_id, filename):
     file_path = os.path.join(DOWNLOAD_DIR, filename)
 
-    # Ensure download directory exists
+
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
     request = service.files().get_media(fileId=file_id)

@@ -37,7 +37,7 @@ class Settings:
     embedding_model: str = os.getenv("EMBEDDING_MODEL", Config.EMBEDDING_MODEL)
     huggingface_token: str = os.getenv("HUGGINGFACE_HUB_TOKEN", "")
 
-    retriever_top_k: int = int(os.getenv("RETRIEVER_TOP_K", "6"))
+    retriever_top_k: int = int(os.getenv("RETRIEVER_TOP_K", 2))
 
     def validate_vector_store(self) -> None:
         if not self.supabase_url or not self.supabase_key:

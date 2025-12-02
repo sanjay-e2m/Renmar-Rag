@@ -38,7 +38,7 @@ def _maybe_login_huggingface() -> None:
         raise RuntimeError("Failed to authenticate with Hugging Face Hub.") from exc
 
 
-def semantic_search(query: str, top_k: int = 2) -> List[Document]:
+def semantic_search(query: str, top_k: int = settings.retriever_top_k) -> List[Document]:
     """
     Perform a basic semantic search against Supabase-stored vectors.
 

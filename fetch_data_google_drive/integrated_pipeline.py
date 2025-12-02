@@ -11,12 +11,12 @@ import os
 import sys
 from pathlib import Path
 
-# Add project root to path
+
 project_root = Path(__file__).parent.absolute()
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-# Import utilities
+
 from fetch_data_google_drive.auth import connect_drive
 from fetch_data_google_drive.drive import list_files_in_folder, download_file
 from fetch_data_google_drive.file_reader import read_pdf, read_txt, read_docx
@@ -77,15 +77,14 @@ def save_processed_content(file_name, content):
     """
     from config.settings import Config
     
-    # Create processed directory if it doesn't exist
+
     processed_dir = Config.DATA_DIR / "processed"
     processed_dir.mkdir(parents=True, exist_ok=True)
     
-    # Create output file path
+
     output_file_name = f"{Path(file_name).stem}_processed.txt"
     output_path = processed_dir / output_file_name
-    
-    # Save content
+
     try:
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(content)
@@ -143,15 +142,15 @@ def run_document_pipeline():
             try:
                 print(f"\n--- Processing: {file['name']} ---")
                 
-                # Download file
+      
                 local_path = download_file(service, file["id"], file["name"])
                 print(f"✅ Downloaded to: {local_path}")
                 
-                # Process content
+      
                 content = process_file(local_path)
                 
                 if content:
-                    # Save processed content
+              
                     output_path = save_processed_content(file["name"], content)
                     if output_path:
                         print(f"✅ Processed and saved: {output_path}")
@@ -164,7 +163,7 @@ def run_document_pipeline():
                 import traceback
                 traceback.print_exc()
         
-        # Final summary
+
         print("\n" + "=" * 80)
         print("PIPELINE COMPLETED")
         print("=" * 80)
@@ -183,7 +182,6 @@ def run_document_pipeline():
 
 
 def main():
-    """Main entry point for the integrated pipeline."""
     run_document_pipeline()
 
 

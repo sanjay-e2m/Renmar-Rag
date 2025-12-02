@@ -1,7 +1,3 @@
-"""
-Console chatbot that retrieves top-2 Supabase documents and asks Gemini to
-answer strictly from those documents.
-"""
 
 from __future__ import annotations
 
@@ -66,7 +62,7 @@ def _build_prompt(question: str, docs: List[Document]) -> str:
 
 
 def ask(question: str) -> str:
-    docs = semantic_search(question, top_k=2)
+    docs = semantic_search(question, top_k=settings.retriever_top_k)
     if not docs:
         return "No supporting documents were found for this query."
 

@@ -39,7 +39,7 @@ temp/                 # Ephemeral artifacts (images, docstore cache)
 
 ## Prerequisites
 
-- Python 3.10+
+- **Python 3.12** (required for the entire codebase)
 - Google Cloud project with Drive API enabled (place OAuth
   `credentials/credentials.json` and generated `credentials/token.json`)
 - Supabase project with a vector table (default `page_summaries`)

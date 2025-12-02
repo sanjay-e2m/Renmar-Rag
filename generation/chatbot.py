@@ -1,7 +1,3 @@
-"""
-LangChain-based chatbot with memory for conversational question-answering.
-Uses semantic search and Gemini for generating answers.
-"""
 
 from __future__ import annotations
 
@@ -23,18 +19,9 @@ from supabase_pipeline.config import settings
 
 
 class ChatBot:
-    """
-    A chatbot with conversational memory that uses semantic search
-    and Gemini to answer questions based on document context.
-    """
 
-    def __init__(self, top_k: int = 2):
-        """
-        Initialize the chatbot with memory and LLM.
+    def __init__(self, top_k: int = settings.retriever_top_k):
 
-        Args:
-            top_k: Number of documents to retrieve for context (default: 2)
-        """
         if not settings.gemini_api_key:
             raise EnvironmentError("GEMINI_API_KEY is missing. Set it in your .env.")
 
@@ -44,7 +31,7 @@ class ChatBot:
 
         # Initialize Gemini model directly (like in chat.py)
         genai.configure(api_key=settings.gemini_api_key)
-        model_name = settings.gemini_model or "gemini-1.5-flash"
+        model_name = settings.gemini_model
         self.model = genai.GenerativeModel(model_name)
 
     def _format_context(self, docs: List[Document]) -> str:
@@ -71,8 +58,7 @@ class ChatBot:
         return "\n\n".join(context_blocks)
 
     def _build_prompt(self, question: str, docs: List[Document], chat_history: List) -> str:
-        """Build the prompt with context, chat history, and question."""
-        # Format chat history
+
         history_text = ""
         if chat_history:
             history_parts = []
@@ -84,10 +70,9 @@ class ChatBot:
             if history_parts:
                 history_text = "\n\n## Previous Conversation:\n" + "\n".join(history_parts) + "\n"
 
-        # Format context documents
         context = self._format_context(docs)
 
-        # Build the full prompt
+
         instruction = dedent("""
             You are a helpful business analytics assistant. You must answer questions
             using ONLY the information contained in the provided documents.
@@ -114,22 +99,14 @@ class ChatBot:
         return prompt
 
     def chat(self, question: str) -> dict:
-        """
-        Process a user question and return an answer with context.
 
-        Args:
-            question: User's question
-
-        Returns:
-            Dictionary with 'answer' and 'context_docs' keys
-        """
         if not question.strip():
             return {
                 "answer": "Please provide a valid question.",
                 "context_docs": []
             }
 
-        # Perform semantic search
+
         docs = semantic_search(question, top_k=self.top_k)
         
         # Build prompt with context and chat history
@@ -154,22 +131,13 @@ class ChatBot:
         return self.chat_history
 
 
-def create_chatbot(top_k: int = 2) -> ChatBot:
-    """
-    Factory function to create a new chatbot instance.
-
-    Args:
-        top_k: Number of documents to retrieve for context
-
-    Returns:
-        ChatBot instance
-    """
-    return ChatBot(top_k=top_k)
+def create_chatbot() -> ChatBot:
+    return ChatBot()
 
 
 if __name__ == "__main__":
-    # Simple CLI test
-    chatbot = create_chatbot(top_k=2)
+
+    chatbot = create_chatbot()
     print("Chatbot initialized. Type 'exit' to quit, 'clear' to clear memory.\n")
 
     while True:

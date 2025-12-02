@@ -66,10 +66,7 @@ class LocalJSONDocStore(BaseStore[str, Document]):
         if not self.store_dir.exists():
             return
         
-        for path in self.store_dir.glob("*.json"):
-            # Use the filename stem as the key
-            # Note: Keys with "/" are stored with "_" replacement, but we can't
-            # reliably reverse this, so we yield the stored format
+        for path in self.store_dir.glob("*.json"):t
             key = path.stem
             
             # Filter by prefix if provided
