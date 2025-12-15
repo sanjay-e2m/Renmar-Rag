@@ -1,21 +1,60 @@
+# Environment & Configuration
 python-dotenv==1.2.1
-dotenv==0.9.9
+
+# Google Authentication & APIs
 google-auth==2.41.1
 google-auth-oauthlib==1.2.3
 google-auth-httplib2==0.2.1
 google-api-python-client==2.187.0
+
+# Document Processing
 pdfplumber==0.11.8
 python-docx==1.2.0
 pillow==12.0.0
 pymupdf==1.26.6
+
+# Google Generative AI
 google-generativeai==0.3.2
+
+# LangChain Framework
 langchain==1.1.0
 langchain-core==1.1.0
 langchain-community==0.4.1
 langchain-google-genai==0.0.1
+
+# Database
 supabase==2.24.0
+
+# ML & Transformers
 transformers==4.57.3
 torch==2.9.1
-tqdm==4.67.1
 sentence-transformers==5.1.2
+
+# Utilities
+tqdm==4.67.1
+
+# Web Framework
 streamlit==1.51.0
+
+# Excel Processing
+pandas>=2.0.0
+numpy>=1.24.0
+openpyxl>=3.1.0
+xlrd>=2.0.1
+
+# Groq LLM
+groq>=0.4.0
+
+
+llama-parse>=0.4.0
+llama-index>=0.10.0
+llama-index-core>=0.10.0
+
+# Logging
+loguru>=0.7.0
+
+# Table Formatting
+tabulate>=0.9.0
+
+# Async Processing (optional, for future enhancements)
+aiofiles>=23.0.0
