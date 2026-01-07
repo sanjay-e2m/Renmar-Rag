@@ -283,6 +283,11 @@ st.markdown("""
     [data-testid="stChatMessage"] {
         padding: 0.5rem 0;
     }
+
+.st-emotion-cache-zy6yx3 {
+    padding: 6rem 1rem 0  !important;
+   
+}
     </style>
 """, unsafe_allow_html=True)
 
@@ -651,11 +656,4 @@ with tab2:
             with st.expander("❌ Errors", expanded=False):
                 for error in results["errors"]:
                     st.error(error)
-
-# Footer
-st.markdown("---")
-st.markdown(
-    "<div class='footer-text'>Powered by LangChain, Google Gemini, and Supabase</div>",
-    unsafe_allow_html=True
-)
 
