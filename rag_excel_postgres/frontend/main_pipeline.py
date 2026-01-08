@@ -93,9 +93,7 @@ class MainPipeline:
         try:
             self.client = Groq(api_key=api_key)
             self.model = model
-            print(f"✓ Main Pipeline initialized with model: {self.model}")
-        except Exception as e:
-            print(f"⚠ Warning: Could not configure Groq client: {e}")
+        except Exception:
             self.client = None
     
     def format_data_for_context(self, result: Any) -> str:
@@ -267,15 +265,11 @@ and answering the user's question directly."""
                     if attempt < max_retries - 1:
                         import time
                         wait_time = 60 * (attempt + 1)
-                        print(f"⚠ API quota exceeded. Waiting {wait_time} seconds before retry {attempt + 2}/{max_retries}...")
                         time.sleep(wait_time)
                         continue
                     else:
-                        # Fallback to basic formatting
                         return self.format_data_for_context(query_result)
                 else:
-                    print(f"⚠ Error formatting answer: {error_str}")
-                    # Fallback to basic formatting
                     return self.format_data_for_context(query_result)
         
         # Final fallback
@@ -310,14 +304,8 @@ and answering the user's question directly."""
             - 'formatted_answer': Formatted user-friendly answer
             - 'error': Error message if failed
         """
-        print("\n" + "=" * 80)
-        print("MAIN PIPELINE - Processing User Question")
-        print("=" * 80)
-        print(f"Question: {user_question}")
-        print("=" * 80)
-        
         try:
-            # Step 1: Execute query using query pipeline
+            # Execute query using query pipeline
             query_result = self.query_pipeline.process_query(user_question)
             
             if not query_result['success']:
@@ -326,18 +314,15 @@ and answering the user's question directly."""
                     'question': user_question,
                     'sql_query': query_result.get('query'),
                     'raw_result': None,
-                    'formatted_answer': f"I encountered an error while processing your question: {query_result.get('error', 'Unknown error')}",
+                    'formatted_answer': f"Error: {query_result.get('error', 'Unknown error')}",
                     'error': query_result.get('error')
                 }
             
             sql_query = query_result['query']
             raw_result = query_result['result']
             
-            # Step 2: Format answer using LLM
+            # Format answer using LLM
             if format_answer:
-                print("\n" + "-" * 80)
-                print("Formatting answer...")
-                print("-" * 80)
                 formatted_answer = self.format_answer(
                     user_question=user_question,
                     sql_query=sql_query,
@@ -347,27 +332,23 @@ and answering the user's question directly."""
                 formatted_answer = self.format_data_for_context(raw_result)
             
             # Prepare response
-            response = {
+            return {
                 'success': True,
                 'question': user_question,
-                'sql_query': sql_query if show_sql else None,
+                'sql_query': sql_query,
                 'raw_result': raw_result,
                 'formatted_answer': formatted_answer,
                 'error': None
             }
             
-            return response
-            
         except Exception as e:
-            error_msg = str(e)
-            print(f"❌ Error in main pipeline: {error_msg}")
             return {
                 'success': False,
                 'question': user_question,
                 'sql_query': None,
                 'raw_result': None,
-                'formatted_answer': f"I encountered an error while processing your question: {error_msg}",
-                'error': error_msg
+                'formatted_answer': f"Error: {str(e)}",
+                'error': str(e)
             }
     
     def display_result(self, result: Dict[str, Any]) -> None:
@@ -379,55 +360,52 @@ and answering the user's question directly."""
         result : Dict[str, Any]
             Result dictionary from process_user_question()
         """
-        print("\n" + "=" * 80)
-        print("RESULT")
-        print("=" * 80)
-        
         if result['success']:
-            print("\n📊 Formatted Answer:")
-            print("-" * 80)
-            print(result['formatted_answer'])
-            
-            if result.get('sql_query') and result['sql_query']:
-                print("\n" + "-" * 80)
-                print("🔍 SQL Query Used:")
-                print("-" * 80)
+            if result.get('sql_query'):
+                print("\nSQL Query:")
                 print(result['sql_query'])
+                print("\n" + "-" * 80)
+            
+            print("\nAnswer:")
+            print(result['formatted_answer'])
         else:
-            print(f"\n❌ Error: {result.get('error', 'Unknown error')}")
-            if result.get('formatted_answer'):
-                print(f"\n{result['formatted_answer']}")
-        
-        print("\n" + "=" * 80)
+            print(f"\nError: {result.get('formatted_answer', result.get('error', 'Unknown error'))}")
 
 
-# Example usage
+# Interactive CLI usage
 if __name__ == "__main__":
-    # Initialize main pipeline
-    pipeline = MainPipeline()
-    
-    # Test connection
-    print("Testing database connection...")
-    if not pipeline.query_pipeline.test_connection():
-        print("Please check your database configuration in .env file")
+    try:
+        pipeline = MainPipeline()
+    except Exception as e:
+        print(f"Error: Failed to initialize pipeline - {e}")
         sys.exit(1)
     
-    # Example questions
-    example_questions = [
-        "Show me top 5 keywords with highest search volume for client efg in December 2025"
-        # "How many keywords are tracked for abc in March 2025?",
-        # "What is the total search volume for xyz in May 2024?",
-    ]
+    if not pipeline.query_pipeline.test_connection():
+        print("Error: Database connection failed")
+        sys.exit(1)
     
-    # Process first example question
-    if example_questions:
-        question = example_questions[0]
-        result = pipeline.process_user_question(
-            user_question=question,
-            format_answer=True,
-            show_sql=True  # Set to False to hide SQL query
-        )
-        
-        # Display result
-        pipeline.display_result(result)
+    while True:
+        try:
+            user_input = input("\nQuestion: ").strip()
+            
+            if user_input.lower() in ['q', 'quit', 'exit']:
+                break
+            
+            if not user_input:
+                continue
+            
+            result = pipeline.process_user_question(
+                user_question=user_input,
+                format_answer=True,
+                show_sql=True
+            )
+            
+            pipeline.display_result(result)
+            
+        except KeyboardInterrupt:
+            break
+        except EOFError:
+            break
+        except Exception:
+            continue
 

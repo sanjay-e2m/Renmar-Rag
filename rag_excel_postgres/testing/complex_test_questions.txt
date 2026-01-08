@@ -1,0 +1,221 @@
+================================================================================
+COMPLEX SQL-RAG TEST QUESTIONS FOR KEYWORD REPORTS DATABASE
+================================================================================
+
+This file contains 10 complex user questions designed to test the SQL-RAG system
+with the reports_master table. Each question tests different SQL capabilities
+including aggregations, filtering, grouping, sorting, and complex business logic.
+
+Database Context:
+- Table: reports_master
+- Contains keyword ranking data with metrics like search_volume, rankings, 
+  locations, search_intent, difficulty scores
+- Filterable by: client_name, year, month
+- Metrics: initial_ranking, current_ranking, change, search_volume, 
+  map_ranking_gbp, location, difficulty, search_intent
+
+================================================================================
+QUESTION 1: AGGREGATION WITH MULTIPLE CONDITIONS
+================================================================================
+
+What is the total search volume and average current ranking for all keywords 
+with search intent 'Commercial' or 'Transactional' across all clients in the 
+year 2025, grouped by month? Show only months where the total search volume 
+exceeds 50000.
+
+Expected SQL Pattern:
+- WHERE year = 2025 AND search_intent IN ('Commercial', 'Transactional')
+- GROUP BY month
+- HAVING SUM(search_volume) > 50000
+- SELECT month, SUM(search_volume), AVG(current_ranking)
+
+================================================================================
+QUESTION 2: RANKING IMPROVEMENT ANALYSIS
+================================================================================
+
+Which client had the most keywords that improved their ranking (positive change) 
+in 2025 compared to their initial ranking? Show the client name, number of 
+improved keywords, average improvement amount, and the total search volume 
+for those improved keywords. Only include keywords where the current ranking 
+is in the top 20 (current_ranking <= 20).
+
+Expected SQL Pattern:
+- WHERE year = 2025 AND change > 0 AND current_ranking <= 20
+- GROUP BY client_name
+- ORDER BY COUNT(*) DESC
+- SELECT client_name, COUNT(*), AVG(change), SUM(search_volume)
+
+================================================================================
+QUESTION 3: LOCATION-BASED PERFORMANCE COMPARISON
+================================================================================
+
+Compare the average search volume and average difficulty score for keywords 
+targeting 'National' location versus state-specific locations (like 'California, USA') 
+for all clients in 2024 and 2025. Show the results side by side with the 
+location type, average search volume, and average difficulty.
+
+Expected SQL Pattern:
+- WHERE year IN (2024, 2025)
+- CASE WHEN location = 'National' THEN 'National' ELSE 'State-Specific' END
+- GROUP BY location_type
+- SELECT location_type, AVG(search_volume), AVG(difficulty)
+
+================================================================================
+QUESTION 4: MONTH-OVER-MONTH GROWTH ANALYSIS
+================================================================================
+
+For each client, show the month-over-month growth in total search volume 
+from the first month to the last month they have data in 2025. Calculate the 
+percentage change and list clients with growth above 20%.
+
+Expected SQL Pattern:
+- WHERE year = 2025
+- Window functions or subqueries to get first and last month per client
+- Calculate percentage change: ((last_month - first_month) / first_month) * 100
+- HAVING percentage_change > 20
+- GROUP BY client_name
+
+================================================================================
+QUESTION 5: TOP PERFORMING KEYWORDS BY MULTIPLE METRICS
+================================================================================
+
+Find the top 10 keywords across all clients in 2025 that have the best 
+combination of high search volume (>= 1000), low difficulty (<= 30), and 
+good current ranking (<= 15). Rank them by a composite score calculated as: 
+(search_volume * 0.4) + ((100 - difficulty) * 0.3) + ((50 - current_ranking) * 0.3).
+
+Expected SQL Pattern:
+- WHERE year = 2025 AND search_volume >= 1000 AND difficulty <= 30 AND current_ranking <= 15
+- Calculate composite score in SELECT
+- ORDER BY composite_score DESC
+- LIMIT 10
+
+================================================================================
+QUESTION 6: SEARCH INTENT DISTRIBUTION AND PERFORMANCE
+================================================================================
+
+For each search intent type (Informational, Commercial, Transactional), 
+calculate the total number of keywords, average search volume, average 
+current ranking, and the percentage of keywords that improved (positive change) 
+across all clients in 2025. Include NULL search_intent as a separate category.
+
+Expected SQL Pattern:
+- WHERE year = 2025
+- COALESCE(search_intent, 'Unknown') AS intent_category
+- GROUP BY intent_category
+- COUNT(*), AVG(search_volume), AVG(current_ranking)
+- SUM(CASE WHEN change > 0 THEN 1 ELSE 0 END) * 100.0 / COUNT(*) AS improvement_percentage
+
+================================================================================
+QUESTION 7: CLIENT COMPARISON WITH RANKING TRENDS
+================================================================================
+
+Compare the performance of all clients in 2025 by showing for each client: 
+the total number of keywords tracked, average initial ranking, average 
+current ranking, total search volume, and the percentage of keywords that 
+moved into top 10 (current_ranking <= 10). Order by total search volume 
+descending and show only clients with at least 50 keywords.
+
+Expected SQL Pattern:
+- WHERE year = 2025
+- GROUP BY client_name
+- HAVING COUNT(*) >= 50
+- COUNT(*), AVG(initial_ranking), AVG(current_ranking), SUM(search_volume)
+- SUM(CASE WHEN current_ranking <= 10 THEN 1 ELSE 0 END) * 100.0 / COUNT(*) AS top10_percentage
+- ORDER BY SUM(search_volume) DESC
+
+================================================================================
+QUESTION 8: SEASONAL TREND ANALYSIS
+================================================================================
+
+Analyze seasonal trends by comparing Q1 (January-March), Q2 (April-June), 
+Q3 (July-September), and Q4 (October-December) of 2025. For each quarter, 
+show the total search volume, average ranking improvement (average positive change), 
+and the count of keywords that improved. Group by quarter and client.
+
+Expected SQL Pattern:
+- WHERE year = 2025
+- CASE WHEN month_id BETWEEN 1 AND 3 THEN 'Q1'
+       WHEN month_id BETWEEN 4 AND 6 THEN 'Q2'
+       WHEN month_id BETWEEN 7 AND 9 THEN 'Q3'
+       ELSE 'Q4' END AS quarter
+- GROUP BY client_name, quarter
+- SUM(search_volume), AVG(CASE WHEN change > 0 THEN change END), COUNT(CASE WHEN change > 0 THEN 1 END)
+
+================================================================================
+QUESTION 9: KEYWORD DIFFICULTY VS PERFORMANCE CORRELATION
+================================================================================
+
+Find keywords where the difficulty score is NULL or missing, and compare 
+their average search volume and average current ranking with keywords that 
+have difficulty scores. Show the results grouped by whether difficulty is 
+present or not, and include the count of keywords in each group for 2025.
+
+Expected SQL Pattern:
+- WHERE year = 2025
+- CASE WHEN difficulty IS NULL THEN 'No Difficulty Data' ELSE 'Has Difficulty Data' END AS difficulty_status
+- GROUP BY difficulty_status
+- COUNT(*), AVG(search_volume), AVG(current_ranking)
+
+================================================================================
+QUESTION 10: COMPREHENSIVE CLIENT PERFORMANCE DASHBOARD
+================================================================================
+
+Create a comprehensive performance summary for each client in 2025 showing:
+1. Total keywords tracked
+2. Average search volume per keyword
+3. Number of keywords in top 10 rankings
+4. Number of keywords in top 20 rankings
+5. Average ranking improvement (only for keywords that improved)
+6. Total potential traffic (sum of search_volume for keywords in top 10)
+7. Best performing keyword (highest search_volume with current_ranking <= 10)
+8. Worst performing keyword (lowest current_ranking with search_volume > 0)
+
+Order the results by total potential traffic descending, and only show 
+clients with data in at least 3 different months.
+
+Expected SQL Pattern:
+- WHERE year = 2025
+- GROUP BY client_name
+- HAVING COUNT(DISTINCT month) >= 3
+- Multiple aggregations: COUNT(*), AVG(search_volume), COUNT(CASE WHEN current_ranking <= 10), etc.
+- Subquery or window function for best/worst performing keywords
+- ORDER BY SUM(CASE WHEN current_ranking <= 10 THEN search_volume ELSE 0 END) DESC
+
+================================================================================
+NOTES FOR TESTING:
+================================================================================
+
+1. Each question should generate valid SQL that can be executed on the 
+   reports_master table.
+
+2. The SQL-RAG system should handle:
+   - Complex WHERE clauses with multiple conditions
+   - Aggregations (SUM, AVG, COUNT)
+   - GROUP BY and HAVING clauses
+   - CASE statements for conditional logic
+   - Window functions or subqueries where needed
+   - NULL value handling
+   - Sorting and limiting results
+
+3. Expected output format should be user-friendly:
+   - Clear column headers
+   - Formatted numbers (e.g., percentages, currency)
+   - Readable text descriptions
+   - Summary statistics where appropriate
+
+4. Test edge cases:
+   - NULL values in difficulty and search_intent
+   - Missing data for certain months/clients
+   - Zero or negative values in rankings
+   - Large result sets that need pagination
+
+5. Performance considerations:
+   - Queries should use indexed columns (client_name, year, month)
+   - Avoid full table scans where possible
+   - Consider query execution time for large datasets
+
+================================================================================
+END OF TEST QUESTIONS
+================================================================================
+

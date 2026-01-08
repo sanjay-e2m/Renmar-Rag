@@ -87,12 +87,6 @@ class QueryPipeline:
             - 'query': Generated SQL query
             - 'error': Error message if failed
         """
-        print("\n" + "=" * 80)
-        print("SQL QUERY PIPELINE")
-        print("=" * 80)
-        print(f"Question: {user_question}")
-        print("=" * 80)
-        
         # Execute query from question
         result_dict = self.query_executor.execute_from_question(
             user_question=user_question,
@@ -162,10 +156,8 @@ class QueryPipeline:
             cursor.execute("SELECT 1")
             cursor.close()
             conn.close()
-            print("✓ Database connection successful")
             return True
-        except Exception as e:
-            print(f"❌ Database connection failed: {str(e)}")
+        except Exception:
             return False
 
 
@@ -191,7 +183,11 @@ if __name__ == "__main__":
     
     # Process a query
     print("\n" + "=" * 80)
-    question = "Show me top 5 keywords with highest search volume for client efg in December 2025"
+    question = '''Compare the performance of 'st' and 'def' in 2025: 
+the total number of keywords tracked, average initial ranking, average 
+current ranking, total search volume, and the percentage of keywords that 
+moved into top 10 (current_ranking <= 10). Order by total search volume 
+descending and show only clients with at least 50 keywords.'''
     result = pipeline.process_query(question)
     
     # Display results

@@ -188,7 +188,8 @@ DB_CONFIG = {
 # Folder Path - CSV Files from Preprocessing Folder
 # -------------------------
 script_dir = Path(__file__).parent.resolve()
-input_folder = script_dir / "Data" / "preprocessing"
+# Go up one level to rag_excel_postgres, then to Data/preprocessing
+input_folder = script_dir.parent / "Data" / "preprocessing"
 
 if not input_folder.exists():
     raise FileNotFoundError(f"Input folder not found: {input_folder}")
@@ -416,4 +417,3 @@ print(f"\n{'='*80}")
 print(f"✅ All CSV files processed successfully!")
 print(f"   Total files processed: {len(csv_files)}")
 print(f"{'='*80}")
-

@@ -102,9 +102,6 @@ class QueryExecutor:
         cursor = None
         
         try:
-            print(f"Executing SQL query...")
-            print(f"Query: {sql_query}")
-            
             conn = self.get_connection()
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             
@@ -119,8 +116,6 @@ class QueryExecutor:
                 # Convert to list of dictionaries
                 results = [dict(row) for row in rows]
                 
-                print(f"✓ Query executed successfully ({len(results)} rows returned)")
-                
                 if return_dataframe and len(results) > 0:
                     # Convert to pandas DataFrame
                     df = pd.DataFrame(results)
@@ -134,29 +129,14 @@ class QueryExecutor:
                 # Non-SELECT query (INSERT, UPDATE, DELETE, etc.)
                 conn.commit()
                 affected_rows = cursor.rowcount
-                print(f"✓ Query executed successfully ({affected_rows} rows affected)")
                 return {"affected_rows": affected_rows}
                 
         except psycopg2.Error as e:
-            error_msg = str(e)
-            print(f"❌ Database error: {error_msg}")
-            
-            # Provide helpful error information
-            if "relation" in error_msg.lower() and "does not exist" in error_msg.lower():
-                print("\n💡 Tip: Make sure the table 'reports_master' exists.")
-                print("   Run: python3 rag_excel_postgres/create_table.py")
-            
-            if "column" in error_msg.lower() and "does not exist" in error_msg.lower():
-                print("\n💡 Tip: Check column names in the schema.")
-                print("   Common columns: client_name, year, month, keyword, search_volume, current_ranking")
-            
             if conn:
                 conn.rollback()
             raise
             
         except Exception as e:
-            error_msg = str(e)
-            print(f"❌ Error executing query: {error_msg}")
             if conn:
                 conn.rollback()
             raise
@@ -193,7 +173,6 @@ class QueryExecutor:
         """
         try:
             # Generate SQL query
-            print("\nGenerating SQL query...")
             sql_query = self.query_generator.generate_sql_query(user_question)
             
             if sql_query is None:
@@ -204,13 +183,7 @@ class QueryExecutor:
                     'query': None
                 }
             
-            print(f"\nGenerated SQL Query:\n  {sql_query}\n")
-            
             # Execute query
-            print("-" * 80)
-            print("Executing query...")
-            print("-" * 80)
-            
             result = self.execute_sql_query(sql_query, return_dataframe=return_dataframe)
             
             return {
