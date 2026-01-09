@@ -69,18 +69,20 @@ class RAGPipeline:
         self, 
         embedding: List[float], 
         complexity: str, 
-        top_k: Optional[int] = None
+        top_k: Optional[int] = None,
+        intent: Optional[str] = None
     ) -> List[Dict[str, any]]:
         """
-        Search knowledge base using vector similarity and complexity filter.
+        Search knowledge base using vector similarity, complexity filter, and optional intent filter.
         
         Args:
             embedding: Query embedding vector
             complexity: Complexity level to filter by
             top_k: Number of results to return (defaults to self.top_k)
+            intent: Optional intent category to filter by (lookup, aggregation, time_based, etc.)
             
         Returns:
-            List of dictionaries with question_text and sql_query
+            List of dictionaries with question_text, sql_query, complexity, intent, similarity
         """
         if top_k is None:
             top_k = self.top_k
@@ -92,47 +94,101 @@ class RAGPipeline:
             connection = psycopg2.connect(**DB_CONFIG)
             cursor = connection.cursor()
             
+            # Check if intent column exists
+            cursor.execute("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'knowledgebase_query' 
+                AND column_name = 'intent';
+            """)
+            has_intent_column = cursor.fetchone() is not None
+            
             # Format embedding as string for pgvector
             embedding_str = '[' + ','.join(map(str, embedding)) + ']'
             
-            # Query using cosine similarity (1 - cosine_distance = similarity)
-            # Filter by complexity and order by similarity
-            query = """
-                SELECT 
-                    id,
-                    question_text,
-                    sql_query,
-                    complexity,
-                    1 - (embedding <=> %s::vector) as similarity
-                FROM knowledgebase_query
-                WHERE complexity = %s
-                  AND embedding IS NOT NULL
-                ORDER BY embedding <=> %s::vector
-                LIMIT %s;
-            """
+            # Build query based on available columns
+            if has_intent_column and intent:
+                # Query with intent filter
+                query = """
+                    SELECT 
+                        id,
+                        question_text,
+                        sql_query,
+                        complexity,
+                        intent,
+                        1 - (embedding <=> %s::vector) as similarity
+                    FROM knowledgebase_query
+                    WHERE complexity = %s
+                      AND intent = %s
+                      AND embedding IS NOT NULL
+                    ORDER BY embedding <=> %s::vector
+                    LIMIT %s;
+                """
+                cursor.execute(query, (embedding_str, complexity, intent, embedding_str, top_k))
+            elif has_intent_column:
+                # Query without intent filter but return intent
+                query = """
+                    SELECT 
+                        id,
+                        question_text,
+                        sql_query,
+                        complexity,
+                        intent,
+                        1 - (embedding <=> %s::vector) as similarity
+                    FROM knowledgebase_query
+                    WHERE complexity = %s
+                      AND embedding IS NOT NULL
+                    ORDER BY embedding <=> %s::vector
+                    LIMIT %s;
+                """
+                cursor.execute(query, (embedding_str, complexity, embedding_str, top_k))
+            else:
+                # Legacy query without intent
+                query = """
+                    SELECT 
+                        id,
+                        question_text,
+                        sql_query,
+                        complexity,
+                        1 - (embedding <=> %s::vector) as similarity
+                    FROM knowledgebase_query
+                    WHERE complexity = %s
+                      AND embedding IS NOT NULL
+                    ORDER BY embedding <=> %s::vector
+                    LIMIT %s;
+                """
+                cursor.execute(query, (embedding_str, complexity, embedding_str, top_k))
             
-            cursor.execute(query, (embedding_str, complexity, embedding_str, top_k))
             results = cursor.fetchall()
             
             # Format results
             formatted_results = []
             for row in results:
-                kb_id, question_text, sql_query, comp, similarity = row
+                if has_intent_column:
+                    kb_id, question_text, sql_query, comp, intent_val, similarity = row
+                else:
+                    kb_id, question_text, sql_query, comp, similarity = row
+                    intent_val = None
                 
                 # Filter by similarity threshold
                 if similarity >= self.similarity_threshold:
-                    formatted_results.append({
+                    result_dict = {
                         "id": kb_id,
                         "question_text": question_text,
                         "sql_query": sql_query,
                         "complexity": comp,
                         "similarity": round(similarity, 4)
-                    })
+                    }
+                    if has_intent_column and intent_val:
+                        result_dict["intent"] = intent_val
+                    formatted_results.append(result_dict)
             
             return formatted_results
             
         except Exception as e:
             print(f"❌ Error searching knowledge base: {e}")
+            import traceback
+            traceback.print_exc()
             return []
             
         finally:
@@ -170,20 +226,30 @@ class RAGPipeline:
         
         embedding = classification_result['embedding']
         complexity = classification_result['complexity']
+        intent = classification_result.get('intent')  # New: get intent
+        strategy = classification_result.get('strategy')  # New: get strategy
         
+        print(f"   ✅ Intent: {intent.upper() if intent else 'N/A'}")
         print(f"   ✅ Complexity: {complexity}")
         print(f"   ✅ Embedding dimension: {classification_result['embedding_dimension']}")
+        if strategy:
+            print(f"   ✅ Strategy: max {strategy.get('max_joins', 'N/A')} joins, reasoning: {strategy.get('requires_reasoning', False)}")
         
         # Step 2: Search knowledge base
-        print(f"\n🔎 Step 2: Searching knowledge base (complexity={complexity}, top_k={top_k or self.top_k})...")
-        results = self.search_knowledge_base(embedding, complexity, top_k)
+        search_params = f"complexity={complexity}"
+        if intent:
+            search_params += f", intent={intent}"
+        print(f"\n🔎 Step 2: Searching knowledge base ({search_params}, top_k={top_k or self.top_k})...")
+        results = self.search_knowledge_base(embedding, complexity, top_k, intent)
         
         print(f"   ✅ Found {len(results)} relevant examples")
         
         # Step 3: Format and return results
         pipeline_result = {
             "user_question": user_question,
+            "intent": intent,
             "complexity": complexity,
+            "strategy": strategy,
             "embedding_dimension": classification_result['embedding_dimension'],
             "results": results,
             "total_results": len(results)
@@ -218,6 +284,7 @@ class RAGPipeline:
             classification_result = self.classifier.process_query(user_question)
             embedding = classification_result['embedding']
             original_complexity = classification_result['complexity']
+            original_intent = classification_result.get('intent')
             
             # Try other complexity levels
             complexity_levels = ["easy", "medium", "hard"]
@@ -226,7 +293,7 @@ class RAGPipeline:
             all_results = []
             for comp in complexity_levels:
                 print(f"   Trying complexity: {comp}...")
-                fallback_results = self.search_knowledge_base(embedding, comp, top_k)
+                fallback_results = self.search_knowledge_base(embedding, comp, top_k, original_intent)
                 all_results.extend(fallback_results)
                 
                 if fallback_results:

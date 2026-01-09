@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS knowledgebase_query (
     question_text TEXT NOT NULL,
     sql_query TEXT NOT NULL,
     complexity TEXT CHECK (complexity IN ('easy', 'medium', 'hard') OR complexity ~ '^[0-9]+(\.[0-9]+)?$'),
+    intent TEXT CHECK (intent IN ('lookup', 'aggregation', 'time_based', 'multi_table_join', 'comparative')),
+    strategy JSONB,
     embedding VECTOR({EMBEDDING_DIMENSION}),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -58,6 +60,16 @@ WITH (lists = 100);
 CREATE_COMPLEXITY_INDEX_QUERY = """
 CREATE INDEX IF NOT EXISTS knowledgebase_query_complexity_idx 
 ON knowledgebase_query (complexity);
+"""
+
+CREATE_INTENT_INDEX_QUERY = """
+CREATE INDEX IF NOT EXISTS knowledgebase_query_intent_idx 
+ON knowledgebase_query (intent);
+"""
+
+CREATE_STRATEGY_INDEX_QUERY = """
+CREATE INDEX IF NOT EXISTS knowledgebase_query_strategy_idx 
+ON knowledgebase_query USING GIN (strategy);
 """
 
 # -------------------------
@@ -88,6 +100,12 @@ def create_knowledge_base():
         
         print("  - Complexity index...")
         cursor.execute(CREATE_COMPLEXITY_INDEX_QUERY)
+        
+        print("  - Intent index...")
+        cursor.execute(CREATE_INTENT_INDEX_QUERY)
+        
+        print("  - Strategy JSONB index (GIN)...")
+        cursor.execute(CREATE_STRATEGY_INDEX_QUERY)
 
         connection.commit()
         print("✅ Knowledge base table and indexes created successfully")
@@ -96,6 +114,8 @@ def create_knowledge_base():
         print("   • question_text: TEXT NOT NULL")
         print("   • sql_query: TEXT NOT NULL")
         print("   • complexity: TEXT (easy/medium/hard or numeric)")
+        print("   • intent: TEXT (lookup/aggregation/time_based/multi_table_join/comparative)")
+        print("   • strategy: JSONB (schema_parts, max_joins, requires_reasoning, reasoning_tools)")
         print(f"   • embedding: VECTOR({EMBEDDING_DIMENSION})")
         print("   • created_at: TIMESTAMP")
         print("   • updated_at: TIMESTAMP")
