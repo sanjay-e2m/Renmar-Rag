@@ -1,6 +1,6 @@
 """
 Main Pipeline for SQL-RAG System
-Integrates query execution and LLM-based answer formatting for user-friendly responses
+Uses LangGraph agent for agentic query processing
 """
 
 import os
@@ -8,45 +8,19 @@ import sys
 from pathlib import Path
 from typing import Dict, Any, Optional
 from dotenv import load_dotenv
-from groq import Groq
 import pandas as pd
 
 # Load environment variables
 load_dotenv()
 
-# Add parent directory to path for imports
+# Add project root to path for imports (when run as script)
 _current_file = Path(__file__).resolve()
-_parent_dir = _current_file.parent.parent
-if str(_parent_dir) not in sys.path:
-    sys.path.insert(0, str(_parent_dir))
+_project_root = _current_file.parent.parent.parent
+if str(_project_root) not in sys.path:
+    sys.path.insert(0, str(_project_root))
 
-# Import QueryPipeline - handle multiple import paths
-try:
-    from rag_excel_postgres.llm.query_pipeline import QueryPipeline
-except ImportError:
-    try:
-        # Try direct import using importlib to avoid __init__.py issues
-        import importlib.util
-        from pathlib import Path
-        
-        current_file = Path(__file__).resolve()
-        query_pipeline_path = current_file.parent.parent / "llm" / "query_pipeline.py"
-        
-        spec = importlib.util.spec_from_file_location("query_pipeline", query_pipeline_path)
-        query_pipeline_module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(query_pipeline_module)
-        QueryPipeline = query_pipeline_module.QueryPipeline
-    except Exception as e:
-        # Last resort: add parent to path and import
-        import sys
-        from pathlib import Path
-        parent_dir = Path(__file__).parent.parent
-        if str(parent_dir) not in sys.path:
-            sys.path.insert(0, str(parent_dir))
-        # Import the module directly
-        import importlib
-        query_pipeline = importlib.import_module('llm.query_pipeline')
-        QueryPipeline = query_pipeline.QueryPipeline
+# Import LangGraph Agent
+from rag_excel_postgres.agent import create_agent_graph, AgentGraph
 
 # Get configuration from environment
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
@@ -58,7 +32,7 @@ if not GROQ_API_KEY:
 
 class MainPipeline:
     """
-    Main pipeline that executes SQL queries and formats answers in a user-friendly manner.
+    Main pipeline using LangGraph agent for agentic SQL-RAG processing.
     """
     
     def __init__(
@@ -68,7 +42,7 @@ class MainPipeline:
         db_config: Optional[Dict[str, Any]] = None
     ):
         """
-        Initialize MainPipeline.
+        Initialize MainPipeline with LangGraph agent.
         
         Parameters:
         -----------
@@ -79,22 +53,23 @@ class MainPipeline:
         db_config : Optional[Dict[str, Any]], optional
             Database configuration dictionary. If None, uses environment variables.
         """
-        api_key = groq_api_key or GROQ_API_KEY
-        model = groq_model or GROQ_MODEL
-        
-        # Initialize query pipeline
-        self.query_pipeline = QueryPipeline(
-            groq_api_key=api_key,
-            groq_model=model,
+        # Initialize LangGraph agent
+        self.agent: AgentGraph = create_agent_graph(
+            groq_api_key=groq_api_key,
+            groq_model=groq_model,
             db_config=db_config
         )
         
-        # Initialize Groq client for answer formatting
+        # Initialize Groq client for legacy format_answer method (fallback)
+        api_key = groq_api_key or GROQ_API_KEY
+        model = groq_model or GROQ_MODEL
         try:
+            from groq import Groq
             self.client = Groq(api_key=api_key)
             self.model = model
         except Exception:
             self.client = None
+            self.model = None
     
     def format_data_for_context(self, result: Any) -> str:
         """
@@ -278,18 +253,21 @@ and answering the user's question directly."""
     def process_user_question(
         self,
         user_question: str,
+        session_id: Optional[str] = None,
         format_answer: bool = True,
         show_sql: bool = False
     ) -> Dict[str, Any]:
         """
-        Complete workflow: Process user question, execute query, and format answer.
+        Complete workflow: Process user question using LangGraph agent.
         
         Parameters:
         -----------
         user_question : str
             Natural language question
+        session_id : Optional[str], optional
+            Session identifier for conversation history. If None, creates new session.
         format_answer : bool, optional
-            Whether to format answer using LLM. Default is True.
+            Whether to format answer using LLM. Default is True. (Always True with agent)
         show_sql : bool, optional
             Whether to include SQL query in response. Default is False.
         
@@ -303,52 +281,97 @@ and answering the user's question directly."""
             - 'raw_result': Raw query result
             - 'formatted_answer': Formatted user-friendly answer
             - 'error': Error message if failed
+            - 'session_id': Session identifier
         """
+        print("\n" + "=" * 80)
+        print("🔍 DEBUG: Starting process_user_question")
+        print("=" * 80)
+        print(f"📝 Original User Question: {user_question}")
+        print(f"🆔 Session ID: {session_id or 'New session will be created'}")
+        print(f"🔧 Format Answer: {format_answer}")
+        print(f"👁️  Show SQL: {show_sql}")
+        
         try:
-            # Execute query using query pipeline
-            query_result = self.query_pipeline.process_query(user_question)
+            print("\n🚀 DEBUG: Invoking LangGraph agent...")
+            # Invoke LangGraph agent
+            final_state = self.agent.invoke(
+                user_query=user_question,
+                session_id=session_id
+            )
+            print("✅ DEBUG: Agent invocation completed")
             
-            if not query_result['success']:
-                return {
-                    'success': False,
-                    'question': user_question,
-                    'sql_query': query_result.get('query'),
-                    'raw_result': None,
-                    'formatted_answer': f"Error: {query_result.get('error', 'Unknown error')}",
-                    'error': query_result.get('error')
-                }
+            # Extract results from state
+            print("\n📊 DEBUG: Extracting results from final state...")
+            success = final_state.get("execution_success", False) and final_state.get("formatted_answer") is not None
+            sql_query = final_state.get("generated_sql")
+            raw_result = final_state.get("query_result")
+            formatted_answer = final_state.get("formatted_answer", "No answer generated")
+            error = final_state.get("error")
+            session_id = final_state.get("session_id")
             
-            sql_query = query_result['query']
-            raw_result = query_result['result']
+            # Debug: Show query formatting attempts
+            formatting_attempt = final_state.get("query_formatting_attempt", 0)
+            original_query = final_state.get("original_query", user_question)
+            first_formatted_query = final_state.get("first_formatted_query")
+            current_user_query = final_state.get("user_query", user_question)
+            execution_retry_count = final_state.get("execution_retry_count", 0)
             
-            # Format answer using LLM
-            if format_answer:
-                formatted_answer = self.format_answer(
-                    user_question=user_question,
-                    sql_query=sql_query,
-                    query_result=raw_result
-                )
+            print(f"📈 Query Formatting Attempt: {formatting_attempt}")
+            print(f"📝 Original Query: {original_query}")
+            if first_formatted_query:
+                print(f"✏️  First Formatted Query: {first_formatted_query}")
+            print(f"💬 Current User Query (used for SQL): {current_user_query}")
+            print(f"🔄 Execution Retry Count: {execution_retry_count}")
+            print(f"✅ Execution Success: {final_state.get('execution_success', False)}")
+            print(f"📊 Query Result: {len(raw_result) if isinstance(raw_result, list) else 'N/A'} rows")
+            print(f"🔍 SQL Query: {sql_query[:100] + '...' if sql_query and len(sql_query) > 100 else sql_query}")
+            
+            # Determine which query version succeeded
+            successful_query = user_question  # Default to original
+            if success:
+                if formatting_attempt == 0:
+                    successful_query = original_query
+                    print(f"✅ SUCCESS: Original query succeeded - storing: {successful_query}")
+                elif formatting_attempt == 1:
+                    successful_query = first_formatted_query if first_formatted_query else current_user_query
+                    print(f"✅ SUCCESS: Formatted query succeeded - storing: {successful_query}")
+                elif formatting_attempt == 2:
+                    successful_query = current_user_query
+                    print(f"✅ SUCCESS: Reformatted query succeeded - storing: {successful_query}")
             else:
-                formatted_answer = self.format_data_for_context(raw_result)
+                print(f"❌ FAILED: No successful query to store")
             
-            # Prepare response
+            print("=" * 80 + "\n")
+            
             return {
-                'success': True,
-                'question': user_question,
-                'sql_query': sql_query,
+                'success': success,
+                'question': successful_query if success else user_question,  # Store successful query version
+                'sql_query': sql_query if show_sql else None,
                 'raw_result': raw_result,
                 'formatted_answer': formatted_answer,
-                'error': None
+                'error': error,
+                'session_id': session_id,
+                'debug_info': {
+                    'formatting_attempt': formatting_attempt,
+                    'original_query': original_query,
+                    'first_formatted_query': first_formatted_query,
+                    'current_user_query': current_user_query,
+                    'execution_retry_count': execution_retry_count,
+                    'successful_query': successful_query if success else None
+                }
             }
             
         except Exception as e:
+            print(f"\n❌ DEBUG: Exception occurred: {str(e)}")
+            print("=" * 80 + "\n")
             return {
                 'success': False,
                 'question': user_question,
                 'sql_query': None,
                 'raw_result': None,
                 'formatted_answer': f"Error: {str(e)}",
-                'error': str(e)
+                'error': str(e),
+                'session_id': session_id
             }
     
     def display_result(self, result: Dict[str, Any]) -> None:
@@ -374,15 +397,17 @@ and answering the user's question directly."""
 
 # Interactive CLI usage
 if __name__ == "__main__":
+    import sys
+    
     try:
         pipeline = MainPipeline()
+        print("✅ LangGraph Agent initialized successfully!")
+        print("💡 Type 'q', 'quit', or 'exit' to stop\n")
     except Exception as e:
-        print(f"Error: Failed to initialize pipeline - {e}")
+        print(f"❌ Error: Failed to initialize pipeline - {e}")
         sys.exit(1)
     
-    if not pipeline.query_pipeline.test_connection():
-        print("Error: Database connection failed")
-        sys.exit(1)
+    session_id = None
     
     while True:
         try:
@@ -396,9 +421,14 @@ if __name__ == "__main__":
             
             result = pipeline.process_user_question(
                 user_question=user_input,
+                session_id=session_id,
                 format_answer=True,
                 show_sql=True
             )
+            
+            # Update session_id for next iteration
+            if result.get('session_id'):
+                session_id = result['session_id']
             
             pipeline.display_result(result)
             
@@ -406,6 +436,7 @@ if __name__ == "__main__":
             break
         except EOFError:
             break
-        except Exception:
+        except Exception as e:
+            print(f"❌ Error: {str(e)}")
             continue
 

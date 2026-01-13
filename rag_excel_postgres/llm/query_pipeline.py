@@ -14,18 +14,8 @@ _project_root = _current_file.parent.parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
-try:
-    from rag_excel_postgres.llm.query_generator import QueryGenerator
-    from rag_excel_postgres.llm.query_executor import QueryExecutor
-except ImportError:
-    try:
-        # Handle relative import if running as script
-        from llm.query_generator import QueryGenerator
-        from llm.query_executor import QueryExecutor
-    except ImportError:
-        # Fallback: import from same directory
-        from query_generator import QueryGenerator
-        from query_executor import QueryExecutor
+from rag_excel_postgres.llm.query_generator import QueryGenerator
+from rag_excel_postgres.llm.query_executor import QueryExecutor
 
 
 class QueryPipeline:

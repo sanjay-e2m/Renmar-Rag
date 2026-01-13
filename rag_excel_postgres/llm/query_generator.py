@@ -4,12 +4,23 @@ Generates SQL queries from natural language questions for PostgreSQL reports_mas
 """
 
 import os
+import sys
 import re
 import time
 from pathlib import Path
-from typing import Optional, Union
+from typing import Optional
 from dotenv import load_dotenv
 from groq import Groq
+
+# Add project root to path for imports
+_current_file = Path(__file__).resolve()
+_project_root = _current_file.parent.parent.parent
+if str(_project_root) not in sys.path:
+    sys.path.insert(0, str(_project_root))
+
+# Import local modules
+from rag_excel_postgres.llm.schema import get_database_schema
+from rag_excel_postgres.postgres_insert_create.conversation_manager import ConversationManager
 
 # Load environment variables
 load_dotenv()
@@ -56,59 +67,30 @@ class QueryGenerator:
         except Exception as e:
             print(f"⚠ Warning: Could not configure Groq model: {e}")
             self.client = None
+        
+        # Initialize conversation manager
+        try:
+            self.conversation_manager = ConversationManager()
+        except Exception as e:
+            print(f"⚠ Warning: Could not initialize conversation manager: {e}")
+            self.conversation_manager = None
     
     def get_schema_context(self) -> str:
         """
         Get the database schema context for reports_master table.
+        Uses the comprehensive schema file for detailed descriptions.
         
         Returns:
         --------
         str
-            Formatted schema description
+            Formatted schema description with detailed column information
         """
-        schema = """
-DATABASE SCHEMA: reports_master
-
-TABLE STRUCTURE:
-----------------
-Filterable Dimensions (for WHERE clauses):
-  - client_name (TEXT NOT NULL): Client name (e.g., 'efg', 'abc', 'xyz')
-  - year (INTEGER NOT NULL): Year (e.g., 2024, 2025)
-  - month (TEXT NOT NULL): Month name (e.g., 'January', 'February', 'March', 'December')
-  - month_id (INTEGER): Month number 1-12 (1=January, 12=December)
-
-Keyword Report Metrics:
-  - keyword (TEXT NOT NULL): The keyword/phrase being tracked
-  - initial_ranking (INTEGER): Initial ranking position
-  - current_ranking (INTEGER): Current ranking position
-  - change (INTEGER): Change in ranking (positive = improved, negative = declined)
-  - search_volume (INTEGER): Search volume for the keyword
-  - map_ranking_gbp (INTEGER): Map pack ranking (GBP)
-  - location (TEXT): Location/region (e.g., 'National')
-  - url (TEXT): URL associated with the keyword
-  - difficulty (INTEGER): Keyword difficulty score
-  - search_intent (TEXT): Search intent type (e.g., 'Informational', 'Commercial', 'Transactional')
-
-Metadata:
-  - source_file (TEXT NOT NULL): Original CSV filename
-  - row_hash (TEXT): Hash for deduplication
-  - ingested_at (TIMESTAMP): When the row was inserted
-
-INDEXES (for fast queries):
-  - idx_reports_master_client_year_month (client_name, year, month)
-  - idx_reports_master_client (client_name)
-  - idx_reports_master_year_month (year, month)
-  - idx_reports_master_keyword (keyword)
-  - idx_reports_master_source_file (source_file)
-
-UNIQUE CONSTRAINT:
-  - (client_name, year, month, keyword, source_file) - prevents duplicates
-"""
-        return schema
+        return get_database_schema()
     
     def get_query_examples(self) -> str:
         """
-        Get comprehensive SQL query examples with natural language questions.
+        Get concise SQL query examples with natural language questions.
+        Optimized for token efficiency.
         
         Returns:
         --------
@@ -116,6 +98,7 @@ UNIQUE CONSTRAINT:
             Formatted examples
         """
         examples = """
+
 SQL QUERY EXAMPLES WITH NATURAL LANGUAGE QUESTIONS:
 
 ═══════════════════════════════════════════════════════════════════════════════
@@ -136,13 +119,6 @@ SQL: SELECT keyword, search_volume, change, search_intent
      ORDER BY search_volume DESC
      LIMIT 10;
 
-Question: "Show keywords with highest search volume across all clients in 2025"
-SQL: SELECT client_name, keyword, search_volume
-     FROM reports_master
-     WHERE year = 2025
-     ORDER BY search_volume DESC
-     LIMIT 20;
-
 ═══════════════════════════════════════════════════════════════════════════════
 2. BOTTOM N / LOWEST / SMALLEST VALUES
 ═══════════════════════════════════════════════════════════════════════════════
@@ -154,12 +130,6 @@ SQL: SELECT keyword, search_volume, current_ranking
      ORDER BY search_volume ASC
      LIMIT 5;
 
-Question: "Keywords with lowest ranking (highest rank number) for klm in March 2024"
-SQL: SELECT keyword, current_ranking, search_volume
-     FROM reports_master
-     WHERE client_name = 'klm' AND year = 2024 AND month = 'March'
-     ORDER BY current_ranking DESC
-     LIMIT 10;
 
 ═══════════════════════════════════════════════════════════════════════════════
 3. FILTERING WITH CONDITIONS
@@ -179,19 +149,6 @@ SQL: SELECT keyword, initial_ranking, current_ranking, change, search_volume
        AND change > 0
      ORDER BY change DESC;
 
-Question: "Keywords with difficulty less than 50 for xyz in May 2024"
-SQL: SELECT keyword, difficulty, search_volume, search_intent
-     FROM reports_master
-     WHERE client_name = 'xyz' AND year = 2024 AND month = 'May' 
-       AND difficulty < 50
-     ORDER BY difficulty ASC;
-
-Question: "Show keywords with search intent 'Commercial' for efg in December 2025"
-SQL: SELECT keyword, search_volume, current_ranking, url
-     FROM reports_master
-     WHERE client_name = 'efg' AND year = 2025 AND month = 'December' 
-       AND search_intent = 'Commercial'
-     ORDER BY search_volume DESC;
 
 ═══════════════════════════════════════════════════════════════════════════════
 4. COUNTING AND AGGREGATIONS
@@ -212,16 +169,6 @@ SQL: SELECT AVG(search_volume) as avg_search_volume
      FROM reports_master
      WHERE client_name = 'xyz' AND year = 2024 AND month = 'May';
 
-Question: "What is the maximum search volume for klm in March 2024?"
-SQL: SELECT MAX(search_volume) as max_search_volume
-     FROM reports_master
-     WHERE client_name = 'klm' AND year = 2024 AND month = 'March';
-
-Question: "How many keywords improved (positive change) for efg in December 2025?"
-SQL: SELECT COUNT(*) as improved_keywords
-     FROM reports_master
-     WHERE client_name = 'efg' AND year = 2025 AND month = 'December' 
-       AND change > 0;
 
 ═══════════════════════════════════════════════════════════════════════════════
 5. COMPARISONS AND RANKINGS
@@ -241,13 +188,6 @@ SQL: SELECT keyword, current_ranking, search_volume, change
        AND current_ranking <= 10
      ORDER BY current_ranking ASC;
 
-Question: "Keywords that dropped in ranking (negative change) for xyz in May 2024"
-SQL: SELECT keyword, initial_ranking, current_ranking, change, search_volume
-     FROM reports_master
-     WHERE client_name = 'xyz' AND year = 2024 AND month = 'May' 
-       AND change < 0
-     ORDER BY change ASC;
-
 ═══════════════════════════════════════════════════════════════════════════════
 6. GROUP BY AND AGGREGATIONS
 ═══════════════════════════════════════════════════════════════════════════════
@@ -266,19 +206,6 @@ SQL: SELECT month, AVG(search_volume) as avg_search_volume, COUNT(*) as keyword_
      GROUP BY month, month_id
      ORDER BY month_id;
 
-Question: "Count keywords by search intent for abc in March 2025"
-SQL: SELECT search_intent, COUNT(*) as keyword_count, AVG(search_volume) as avg_volume
-     FROM reports_master
-     WHERE client_name = 'abc' AND year = 2025 AND month = 'March'
-     GROUP BY search_intent
-     ORDER BY keyword_count DESC;
-
-Question: "Total search volume by location for xyz in May 2024"
-SQL: SELECT location, SUM(search_volume) as total_volume, COUNT(*) as keyword_count
-     FROM reports_master
-     WHERE client_name = 'xyz' AND year = 2024 AND month = 'May'
-     GROUP BY location
-     ORDER BY total_volume DESC;
 
 ═══════════════════════════════════════════════════════════════════════════════
 7. MULTIPLE CONDITIONS (AND/OR)
@@ -304,6 +231,7 @@ SQL: SELECT keyword, search_volume, current_ranking
      WHERE client_name = 'xyz' AND year = 2024 AND month = 'May' 
        AND search_volume BETWEEN 100 AND 1000
      ORDER BY search_volume DESC;
+
 
 ═══════════════════════════════════════════════════════════════════════════════
 8. MONTH-TO-MONTH COMPARISONS
@@ -374,12 +302,14 @@ SQL: SELECT keyword, search_intent, search_volume
      WHERE client_name = 'abc' AND year = 2025 AND month = 'March' 
        AND search_intent IS NOT NULL
      ORDER BY search_volume DESC;
+
 """
         return examples
     
     def generate_sql_query(
         self,
         user_question: str,
+        session_id: Optional[str] = None,
         max_retries: int = 3
     ) -> Optional[str]:
         """
@@ -389,6 +319,9 @@ SQL: SELECT keyword, search_intent, search_volume
         -----------
         user_question : str
             The natural language question about the data
+        session_id : Optional[str], optional
+            Session identifier for conversation history. If provided, includes 
+            top 5 recent conversations in context. Default is None.
         max_retries : int, optional
             Maximum number of retry attempts for API calls
         
@@ -400,100 +333,67 @@ SQL: SELECT keyword, search_intent, search_volume
         if self.client is None:
             return None
         
+        # Get comprehensive schema from schema file
         schema_context = self.get_schema_context()
+        
+        # Get query examples
         query_examples = self.get_query_examples()
         
-        prompt = f"""You are an expert PostgreSQL SQL query generator. Generate precise SQL queries to answer questions about the reports_master table.
+        # Get conversation history if session_id provided (limit to 3 for token efficiency)
+        conversation_history_context = ""
+        if session_id and self.conversation_manager:
+            try:
+                conversations = self.conversation_manager.get_recent_conversations(
+                    session_id=session_id,
+                    limit=3  # Reduced from 5 to 3 for token efficiency
+                )
+                conversation_history_context = self.conversation_manager.format_conversation_history(
+                    conversations
+                )
+            except Exception as e:
+                print(f"⚠ Warning: Could not fetch conversation history: {e}")
+                conversation_history_context = ""
+        
+        # Get unique client list from database for context
+        client_list_context = ""
+        if self.conversation_manager:
+            try:
+                clients = self.conversation_manager.get_unique_clients()
+                client_list_context = self.conversation_manager.format_client_list(clients)
+            except Exception as e:
+                print(f"⚠ Warning: Could not fetch client list: {e}")
+                client_list_context = ""
+        
+        # Use schema as-is (already optimized)
+        schema_truncated = schema_context
+        
+        prompt = f"""Generate SQL for reports_master table.
 
-{schema_context}
+SCHEMA:
+{schema_truncated}
+
+{client_list_context}
 
 {query_examples}
 
-CRITICAL RULES AND REGULATIONS:
-═══════════════════════════════════════════════════════════════════════════════
+{conversation_history_context}
 
-1. TABLE NAME: Always use 'reports_master' (lowercase, with underscore)
+RULES:
+- Table: reports_master (lowercase)
+- Columns: lowercase_with_underscores (client_name, search_volume, current_ranking)
+- Filter by client_name, year, month when specified
+- Month names: 'December' (capitalized, full name)
+- Client names: lowercase ('efg', not 'EFG')
+- Year: integer (2025, not '2025')
+- Top N: ORDER BY column DESC LIMIT N
+- Aggregations: COUNT(*), SUM(), AVG(), MAX(), MIN()
+- Text search: ILIKE '%pattern%'
+- change > 0 = improved, change < 0 = declined
+- Output ONLY SQL query, no explanations
 
-2. COLUMN NAMES: Use exact column names as shown in schema:
-   - Use lowercase with underscores: client_name, search_volume, current_ranking
-   - Month names are stored as TEXT: 'January', 'February', 'March', etc. (capitalized)
-   - Client names are lowercase: 'efg', 'abc', 'xyz', 'klm'
+QUESTION: {user_question}
 
-3. FILTERING BEST PRACTICES:
-   - ALWAYS filter by client_name, year, and month when specified in question
-   - Use exact month names: 'December' (not 'Dec' or '12')
-   - Use exact client names: 'efg' (not 'EFG' or 'Efg')
-   - Use integers for year: 2025 (not '2025' as string)
-
-4. WHERE CLAUSE PATTERNS:
-   - client_name = 'clientname' (always lowercase, single quotes)
-   - year = 2025 (integer, no quotes)
-   - month = 'December' (text, capitalized, single quotes)
-   - Use AND to combine multiple conditions
-
-5. SORTING:
-   - For "top/highest/largest": ORDER BY column DESC
-   - For "bottom/lowest/smallest": ORDER BY column ASC
-   - For rankings: lower number = better rank, so ORDER BY current_ranking ASC for best ranks
-
-6. LIMIT:
-   - Always use LIMIT for "top N" or "bottom N" questions
-   - Default to LIMIT 10 if number not specified
-
-7. AGGREGATIONS:
-   - COUNT(*): Count all rows
-   - SUM(column): Sum numeric values
-   - AVG(column): Average numeric values
-   - MAX(column): Maximum value
-   - MIN(column): Minimum value
-   - Use GROUP BY when aggregating by categories
-
-8. NULL HANDLING:
-   - Use IS NULL for missing values
-   - Use IS NOT NULL for non-missing values
-   - NULL values are excluded from aggregations automatically
-
-9. TEXT SEARCHING:
-   - Use ILIKE for case-insensitive pattern matching
-   - Use % for wildcards: ILIKE '%keyword%'
-   - Use single quotes for text literals
-
-10. COMPARISONS:
-    - Use >, <, >=, <= for numeric comparisons
-    - Use = for exact matches
-    - Use BETWEEN for ranges: column BETWEEN value1 AND value2
-    - Use IN for multiple values: column IN ('value1', 'value2')
-
-11. CHANGE COLUMN INTERPRETATION:
-    - change > 0: Ranking improved (moved up)
-    - change < 0: Ranking declined (moved down)
-    - change = 0: No change
-
-12. OUTPUT FORMAT:
-    - Output ONLY the SQL query
-    - NO explanations, NO comments, NO markdown code blocks
-    - NO semicolon at the end (optional, but preferred without)
-    - Start directly with SELECT
-
-13. COLUMN SELECTION:
-    - Include relevant columns in SELECT clause
-    - For aggregations, use aliases: SUM(search_volume) AS total_volume
-    - Include context columns (keyword, client_name, month) when useful
-
-14. PERFORMANCE:
-    - Use indexed columns in WHERE clauses: client_name, year, month
-    - Avoid functions on indexed columns in WHERE clauses
-    - Use LIMIT to restrict result sets
-
-15. QUESTION ANALYSIS:
-    - Extract client name, year, month from question
-    - Identify what metric to query (search_volume, ranking, change, etc.)
-    - Determine if aggregation needed (COUNT, SUM, AVG, etc.)
-    - Check if comparison needed (top N, bottom N, filtering)
-
-USER QUESTION: {user_question}
-
-Generate the SQL query following all rules above. Output ONLY the SQL query, nothing else:"""
+SQL:"""
 
         for attempt in range(max_retries):
             try:
@@ -564,8 +464,15 @@ if __name__ == "__main__":
     # Initialize generator
     generator = QueryGenerator()
     
-    # Example: Generate SQL query
-    question = "Show me top 5 keywords with highest search volume for client efg in December 2025"
+    # Example: Generate SQL query without session (no conversation history)
+    question = "Show me top 5 keywords with highestt search volume for efg in December 2025"
     query = generator.generate_sql_query(question)
     print(f"Question: {question}")
     print(f"Generated SQL: {query}")
+    
+    # Example: Generate SQL query with session (includes conversation history)
+    session_id = "test_session_123"
+    question_with_context = "What about for client abc?"
+    query_with_history = generator.generate_sql_query(question_with_context, session_id=session_id)
+    print(f"\nQuestion (with context): {question_with_context}")
+    print(f"Generated SQL: {query_with_history}")
