@@ -62,3 +62,8 @@ aiofiles>=23.0.0
 
 # Use binary wheel to avoid system pg_config requirement
 psycopg2-binary==2.9.9
+
+# Agno Framework (Optional - for SQL Planning Agent)
+# Install with: pip install agno
+# If not installed, the agent will use fallback implementation with direct Groq
+# agno>=0.1.0
